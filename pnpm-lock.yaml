@@ -4,6 +4,14 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+dependencies:
+  '@zk-kit/imt.sol':
+    specifier: https://gitpkg.now.sh/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500
+    version: '@gitpkg.now.sh/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500'
+  poseidon-solidity:
+    specifier: ^0.0.5
+    version: 0.0.5
+
 devDependencies:
   commit-and-tag-version:
     specifier: ^12.2.0
@@ -1331,6 +1339,10 @@ packages:
     engines: {node: '>=4'}
     dev: true
 
+  /poseidon-solidity@0.0.5:
+    resolution: {integrity: sha512-NzrvSwHzvZgT4hvg2GyGqeR+UOU/eLSEt4wAoXEua+VaR7NTKKwx1X9bPlh1VMBEVEno+IWvkRBbidFGzTeAqQ==}
+    dev: false
+
   /prettier@2.8.8:
     resolution: {integrity: sha512-tdN8qQGvNjw4CHbY+XXk0JgCXn9QiF21a55rBe5LJAU+kDyC4WQn4+awm2Xfk2lQMk5fKup9XgzTZtGkjBdP9Q==}
     engines: {node: '>=10.13.0'}
@@ -1892,3 +1904,11 @@ packages:
     resolution: {integrity: sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q==}
     engines: {node: '>=10'}
     dev: true
+
+  '@gitpkg.now.sh/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500':
+    resolution: {tarball: https://gitpkg.now.sh/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500}
+    name: imt.sol
+    version: 0.0.0
+    dependencies:
+      poseidon-solidity: 0.0.5
+    dev: false
