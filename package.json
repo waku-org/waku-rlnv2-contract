@@ -11,15 +11,11 @@
     "solhint-community": "^3.6.0",
     "commit-and-tag-version": "^12.2.0"
   },
-  "keywords": [
-    "blockchain",
-    "ethereum",
-    "forge",
-    "foundry",
-    "smart-contracts",
-    "solidity",
-    "template"
-  ],
+  "dependencies": {
+    "@zk-kit/imt.sol": "https://gitpkg.now.sh/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500",
+    "poseidon-solidity": "^0.0.5"
+  },
+  "keywords": ["blockchain", "ethereum", "forge", "foundry", "smart-contracts", "solidity", "template"],
   "private": true,
   "scripts": {
     "clean": "rm -rf cache out",
