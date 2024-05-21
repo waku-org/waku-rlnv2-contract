@@ -8,4 +8,3 @@ Ensure you completed **all of the steps** below before submitting your pull requ
 
 - [ ] Added natspec comments?
 - [ ] Ran `pnpm adorno`?
-- [ ] Ran `pnpm verify`?
