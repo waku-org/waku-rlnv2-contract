@@ -8,8 +8,8 @@
 [license-badge]: https://img.shields.io/badge/License-MIT-blue.svg
 
 Waku's RLNv2 contracts, which include -
-- LazyIMT, which allows the root of the chain to be accessible on-chain.
 
+- LazyIMT, which allows the root of the chain to be accessible on-chain.
 
 ## What's Inside
 
