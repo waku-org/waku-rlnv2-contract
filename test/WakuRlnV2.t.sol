@@ -6,7 +6,7 @@ import { Test, console } from "forge-std/Test.sol";
 import { Deploy } from "../script/Deploy.s.sol";
 import { DeploymentConfig } from "../script/DeploymentConfig.s.sol";
 import { WakuRlnV2 } from "../src/WakuRlnV2.sol";
-import {PoseidonT3} from "poseidon-solidity/PoseidonT3.sol";
+import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
 import { LazyIMT } from "@zk-kit/imt.sol/LazyIMT.sol";
 
 contract WakuRlnV2Test is Test {
