@@ -28,15 +28,17 @@ contract WakuRlnV2Test is Test {
         w.register(idCommitment, userMessageLimit);
         vm.pauseGasMetering();
         assertEq(w.idCommitmentIndex(), 1);
-        assertEq(w.memberExists(2), true);
-        (uint32 fetchedUserMessageLimit, uint32 index) = w.memberInfo(2);
-        assertEq(fetchedUserMessageLimit, 2);
+        assertEq(w.memberExists(idCommitment), true);
+        (uint32 fetchedUserMessageLimit, uint32 index) = w.memberInfo(idCommitment);
+        assertEq(fetchedUserMessageLimit, userMessageLimit);
         assertEq(index, 0);
-        uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
+        // kats from zerokit
+        uint256 rateCommitment = 4699387056273519054140667386511343037709699938246587880795929666834307503001;
         assertEq(w.indexToCommitment(0), rateCommitment);
         uint256[] memory commitments = w.getCommitments(0, 1);
         assertEq(commitments.length, 1);
-        assertEq(commitments[0], rateCommitment);
+        assertEq(commitments[index], rateCommitment);
+        assertEq(w.root(), 13801897483540040307162267952866411686127372014953358983481592640000001877295);
         vm.resumeGasMetering();
     }
 }
