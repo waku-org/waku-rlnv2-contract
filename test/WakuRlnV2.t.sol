@@ -5,22 +5,19 @@ import { Test, console } from "forge-std/Test.sol";
 
 import { Deploy } from "../script/Deploy.s.sol";
 import { DeploymentConfig } from "../script/DeploymentConfig.s.sol";
-import { Foo } from "../src/Foo.sol";
+import { WakuRlnV2 } from "../src/WakuRlnV2.sol";
 
-contract FooTest is Test {
-    Foo internal foo;
+contract WakuRlnV2Test is Test {
+    WakuRlnV2 internal w;
     DeploymentConfig internal deploymentConfig;
 
     address internal deployer;
 
     function setUp() public virtual {
         Deploy deployment = new Deploy();
-        (foo, deploymentConfig) = deployment.run();
+        (w, deploymentConfig) = deployment.run();
     }
 
-    function test_Example() external {
-        console.log("Hello World");
-        uint256 x = 42;
-        assertEq(foo.id(x), x, "value mismatch");
+    function test__ValidRegistration() external {
     }
 }
