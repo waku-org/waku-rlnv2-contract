@@ -133,8 +133,7 @@ contract WakuRlnV2 {
         if (idCommitmentIndex >= SET_SIZE) revert FullTree();
 
         uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
-        MembershipInfo memory member =
-            MembershipInfo({ userMessageLimit: uint32(userMessageLimit), index: idCommitmentIndex });
+        MembershipInfo memory member = MembershipInfo({ userMessageLimit: userMessageLimit, index: idCommitmentIndex });
         LazyIMT.insert(imtData, rateCommitment);
         memberInfo[idCommitment] = member;
 
@@ -150,13 +149,13 @@ contract WakuRlnV2 {
         return imtData.elements[LazyIMT.indexForElement(0, index)];
     }
 
-    function getCommitments(uint256 startIndex, uint256 endIndex) public view returns (uint256[] memory) {
+    function getCommitments(uint32 startIndex, uint32 endIndex) public view returns (uint256[] memory) {
         if (startIndex >= endIndex) revert InvalidPaginationQuery(startIndex, endIndex);
         if (endIndex > idCommitmentIndex) revert InvalidPaginationQuery(startIndex, endIndex);
 
         uint256[] memory commitments = new uint256[](endIndex - startIndex);
-        for (uint256 i = startIndex; i < endIndex; i++) {
-            commitments[i - startIndex] = indexToCommitment(uint32(i));
+        for (uint32 i = startIndex; i < endIndex; i++) {
+            commitments[i - startIndex] = indexToCommitment(i);
         }
         return commitments;
     }

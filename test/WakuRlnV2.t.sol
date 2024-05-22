@@ -34,6 +34,9 @@ contract WakuRlnV2Test is Test {
         assertEq(index, 0);
         uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
         assertEq(w.indexToCommitment(0), rateCommitment);
+        uint256[] memory commitments = w.getCommitments(0, 1);
+        assertEq(commitments.length, 1);
+        assertEq(commitments[0], rateCommitment);
         vm.resumeGasMetering();
     }
 }
