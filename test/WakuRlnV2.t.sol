@@ -18,6 +18,5 @@ contract WakuRlnV2Test is Test {
         (w, deploymentConfig) = deployment.run();
     }
 
-    function test__ValidRegistration() external {
-    }
+    function test__ValidRegistration() external { }
 }

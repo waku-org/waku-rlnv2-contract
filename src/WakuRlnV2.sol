@@ -154,10 +154,8 @@ contract WakuRlnV2 {
         if (memberExists[idCommitment]) revert DuplicateIdCommitment();
         if (idCommitmentIndex >= SET_SIZE) revert FullTree();
 
-        MembershipInfo memory member = MembershipInfo({
-            userMessageLimit: uint32(userMessageLimit),
-            stakedAmount: stake
-        });
+        MembershipInfo memory member =
+            MembershipInfo({ userMessageLimit: uint32(userMessageLimit), stakedAmount: stake });
 
         members[idCommitment] = idCommitmentIndex;
         uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
