@@ -31,9 +31,6 @@ error InvalidReceiverAddress(address to);
 /// Member is not registered
 error MemberNotRegistered(uint256 idCommitment);
 
-/// Member has no stake
-error MemberHasNoStake(uint256 idCommitment);
-
 /// User has insufficient balance to withdraw
 error InsufficientWithdrawalBalance();
 
@@ -54,9 +51,6 @@ contract WakuRlnV2 {
     /// @notice The max message limit per epoch
     uint256 public immutable MAX_MESSAGE_LIMIT;
 
-    /// @notice The deposit amount required to register as a member
-    uint256 public immutable MEMBERSHIP_DEPOSIT;
-
     /// @notice The depth of the merkle tree
     uint256 public immutable DEPTH;
 
@@ -69,15 +63,9 @@ contract WakuRlnV2 {
     struct MembershipInfo {
         /// @notice the user message limit of each member
         uint32 userMessageLimit;
-        /// @notice The amount of eth staked by each member
-        uint256 stakedAmount;
+        /// @notice the index of the member in the set
+        uint32 index;
     }
-
-    /// maps from idCommitment to their index in the set
-    mapping(uint256 => uint32) public members;
-
-    /// @notice The membership status of each member
-    mapping(uint256 => bool) public memberExists;
 
     /// @notice the member metadata
     mapping(uint256 => MembershipInfo) public memberInfo;
@@ -110,8 +98,7 @@ contract WakuRlnV2 {
         _;
     }
 
-    constructor(uint256 membershipDeposit, uint256 depth, uint256 maxMessageLimit) {
-        MEMBERSHIP_DEPOSIT = membershipDeposit;
+    constructor(uint256 depth, uint256 maxMessageLimit) {
         MAX_MESSAGE_LIMIT = maxMessageLimit;
         DEPTH = depth;
         SET_SIZE = 1 << depth;
@@ -119,11 +106,9 @@ contract WakuRlnV2 {
         LazyIMT.init(imtData, 20);
     }
 
-    /// Returns the deposit amount required to register as a member
-    /// @param userMessageLimit The message limit of the member
-    /// TODO: update this function as per tokenomics design
-    function getDepositAmount(uint32 userMessageLimit) public view returns (uint256) {
-        return userMessageLimit * MEMBERSHIP_DEPOSIT;
+    function memberExists(uint256 idCommitment) public view returns (bool) {
+        MembershipInfo memory member = memberInfo[idCommitment];
+        return member.userMessageLimit > 0 && member.index >= 0;
     }
 
     /// Allows a user to register as a member
@@ -134,33 +119,23 @@ contract WakuRlnV2 {
         uint32 userMessageLimit
     )
         external
-        payable
-        virtual
         onlyValidIdCommitment(idCommitment)
         onlyValidUserMessageLimit(userMessageLimit)
     {
-        uint256 requiredDeposit = getDepositAmount(userMessageLimit);
-        if (msg.value != requiredDeposit) {
-            revert InsufficientDeposit(MEMBERSHIP_DEPOSIT, msg.value);
-        }
-        _register(idCommitment, userMessageLimit, msg.value);
+        _register(idCommitment, userMessageLimit);
     }
 
     /// Registers a member
     /// @param idCommitment The idCommitment of the member
     /// @param userMessageLimit The message limit of the member
-    /// @param stake The amount of eth staked by the member
-    function _register(uint256 idCommitment, uint32 userMessageLimit, uint256 stake) internal virtual {
-        if (memberExists[idCommitment]) revert DuplicateIdCommitment();
+    function _register(uint256 idCommitment, uint32 userMessageLimit) internal {
+        if (memberExists(idCommitment)) revert DuplicateIdCommitment();
         if (idCommitmentIndex >= SET_SIZE) revert FullTree();
 
-        MembershipInfo memory member =
-            MembershipInfo({ userMessageLimit: uint32(userMessageLimit), stakedAmount: stake });
-
-        members[idCommitment] = idCommitmentIndex;
         uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
+        MembershipInfo memory member =
+            MembershipInfo({ userMessageLimit: uint32(userMessageLimit), index: idCommitmentIndex });
         LazyIMT.insert(imtData, rateCommitment);
-        memberExists[idCommitment] = true;
         memberInfo[idCommitment] = member;
 
         emit MemberRegistered(idCommitment, userMessageLimit, idCommitmentIndex);
@@ -171,13 +146,17 @@ contract WakuRlnV2 {
         return idCommitment != 0 && idCommitment < Q;
     }
 
+    function indexToCommitment(uint32 index) public view returns (uint256) {
+        return imtData.elements[LazyIMT.indexForElement(0, index)];
+    }
+
     function getCommitments(uint256 startIndex, uint256 endIndex) public view returns (uint256[] memory) {
         if (startIndex >= endIndex) revert InvalidPaginationQuery(startIndex, endIndex);
         if (endIndex > idCommitmentIndex) revert InvalidPaginationQuery(startIndex, endIndex);
 
         uint256[] memory commitments = new uint256[](endIndex - startIndex);
         for (uint256 i = startIndex; i < endIndex; i++) {
-            commitments[i - startIndex] = imtData.elements[LazyIMT.indexForElement(uint8(i), imtData.numberOfLeaves)];
+            commitments[i - startIndex] = indexToCommitment(uint32(i));
         }
         return commitments;
     }
