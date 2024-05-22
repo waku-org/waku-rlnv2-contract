@@ -33,12 +33,16 @@ contract WakuRlnV2Test is Test {
         assertEq(fetchedUserMessageLimit, userMessageLimit);
         assertEq(index, 0);
         // kats from zerokit
-        uint256 rateCommitment = 4699387056273519054140667386511343037709699938246587880795929666834307503001;
+        uint256 rateCommitment =
+            4_699_387_056_273_519_054_140_667_386_511_343_037_709_699_938_246_587_880_795_929_666_834_307_503_001;
         assertEq(w.indexToCommitment(0), rateCommitment);
         uint256[] memory commitments = w.getCommitments(0, 1);
         assertEq(commitments.length, 1);
         assertEq(commitments[index], rateCommitment);
-        assertEq(w.root(), 13801897483540040307162267952866411686127372014953358983481592640000001877295);
+        assertEq(
+            w.root(),
+            13_801_897_483_540_040_307_162_267_952_866_411_686_127_372_014_953_358_983_481_592_640_000_001_877_295
+        );
         vm.resumeGasMetering();
     }
 }
