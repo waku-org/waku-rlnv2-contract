@@ -49,13 +49,13 @@ contract WakuRlnV2 {
         21_888_242_871_839_275_222_246_405_745_257_275_088_548_364_400_416_034_343_698_204_186_575_808_495_617;
 
     /// @notice The max message limit per epoch
-    uint256 public immutable MAX_MESSAGE_LIMIT;
+    uint32 public immutable MAX_MESSAGE_LIMIT;
 
     /// @notice The depth of the merkle tree
-    uint256 public immutable DEPTH;
+    uint8 public immutable DEPTH;
 
     /// @notice The size of the merkle tree, i.e 2^depth
-    uint256 public immutable SET_SIZE;
+    uint32 public immutable SET_SIZE;
 
     /// @notice The index of the next member to be registered
     uint32 public idCommitmentIndex = 0;
@@ -98,10 +98,10 @@ contract WakuRlnV2 {
         _;
     }
 
-    constructor(uint256 depth, uint256 maxMessageLimit) {
+    constructor(uint8 depth, uint32 maxMessageLimit) {
         MAX_MESSAGE_LIMIT = maxMessageLimit;
         DEPTH = depth;
-        SET_SIZE = 1 << depth;
+        SET_SIZE = uint32(1 << depth);
         deployedBlockNumber = uint32(block.number);
         LazyIMT.init(imtData, 20);
     }
@@ -161,10 +161,10 @@ contract WakuRlnV2 {
     }
 
     function root() external view returns (uint256) {
-        return LazyIMT.root(imtData, 20);
+        return LazyIMT.root(imtData, DEPTH);
     }
 
     function merkleProofElements(uint40 index) public view returns (uint256[] memory) {
-        return LazyIMT.merkleProofElements(imtData, index, 20);
+        return LazyIMT.merkleProofElements(imtData, index, DEPTH);
     }
 }
