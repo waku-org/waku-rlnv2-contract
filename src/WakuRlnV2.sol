@@ -8,37 +8,14 @@ import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
 /// The tree is full
 error FullTree();
 
-/// Invalid deposit amount
-/// @param required The required deposit amount
-/// @param provided The provided deposit amount
-error InsufficientDeposit(uint256 required, uint256 provided);
-
 /// Member is already registered
 error DuplicateIdCommitment();
-
-/// Failed validation on registration/slashing
-error FailedValidation();
 
 /// Invalid idCommitment
 error InvalidIdCommitment(uint256 idCommitment);
 
 /// Invalid userMessageLimit
-error InvalidUserMessageLimit(uint256 messageLimit);
-
-/// Invalid receiver address, when the receiver is the contract itself or 0x0
-error InvalidReceiverAddress(address to);
-
-/// Member is not registered
-error MemberNotRegistered(uint256 idCommitment);
-
-/// User has insufficient balance to withdraw
-error InsufficientWithdrawalBalance();
-
-/// Contract has insufficient balance to return
-error InsufficientContractBalance();
-
-/// Invalid proof
-error InvalidProof();
+error InvalidUserMessageLimit(uint32 messageLimit);
 
 /// Invalid pagination query
 error InvalidPaginationQuery(uint256 startIndex, uint256 endIndex);
@@ -52,7 +29,7 @@ contract WakuRlnV2 {
     uint32 public immutable MAX_MESSAGE_LIMIT;
 
     /// @notice The depth of the merkle tree
-    uint8 public immutable DEPTH;
+    uint8 public constant DEPTH = 20;
 
     /// @notice The size of the merkle tree, i.e 2^depth
     uint32 public immutable SET_SIZE;
@@ -80,30 +57,24 @@ contract WakuRlnV2 {
     /// @param idCommitment The idCommitment of the member
     /// @param userMessageLimit the user message limit of the member
     /// @param index The index of the member in the set
-    event MemberRegistered(uint256 idCommitment, uint32 userMessageLimit, uint256 index);
-
-    /// Emitted when a member is removed from the set
-    /// @param idCommitment The idCommitment of the member
-    /// @param index The index of the member in the set
-    event MemberWithdrawn(uint256 idCommitment, uint256 index);
+    event MemberRegistered(uint256 idCommitment, uint32 userMessageLimit, uint32 index);
 
     modifier onlyValidIdCommitment(uint256 idCommitment) {
         if (!isValidCommitment(idCommitment)) revert InvalidIdCommitment(idCommitment);
         _;
     }
 
-    modifier onlyValidUserMessageLimit(uint256 messageLimit) {
+    modifier onlyValidUserMessageLimit(uint32 messageLimit) {
         if (messageLimit > MAX_MESSAGE_LIMIT) revert InvalidUserMessageLimit(messageLimit);
         if (messageLimit == 0) revert InvalidUserMessageLimit(messageLimit);
         _;
     }
 
-    constructor(uint8 depth, uint32 maxMessageLimit) {
+    constructor(uint32 maxMessageLimit) {
         MAX_MESSAGE_LIMIT = maxMessageLimit;
-        DEPTH = depth;
-        SET_SIZE = uint32(1 << depth);
+        SET_SIZE = uint32(1 << DEPTH);
         deployedBlockNumber = uint32(block.number);
-        LazyIMT.init(imtData, 20);
+        LazyIMT.init(imtData, DEPTH);
     }
 
     function memberExists(uint256 idCommitment) public view returns (bool) {
