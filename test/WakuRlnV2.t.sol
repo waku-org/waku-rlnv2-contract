@@ -1,15 +1,18 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity >=0.8.19 <0.9.0;
 
-import { Test, console } from "forge-std/Test.sol";
+import { Test } from "forge-std/Test.sol";
+import { stdStorage, StdStorage } from "forge-std/Test.sol";
 
 import { Deploy } from "../script/Deploy.s.sol";
 import { DeploymentConfig } from "../script/DeploymentConfig.s.sol";
-import { WakuRlnV2 } from "../src/WakuRlnV2.sol";
+import "../src/WakuRlnV2.sol";
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
 import { LazyIMT } from "@zk-kit/imt.sol/LazyIMT.sol";
 
 contract WakuRlnV2Test is Test {
+    using stdStorage for StdStorage;
+
     WakuRlnV2 internal w;
     DeploymentConfig internal deploymentConfig;
 
@@ -20,7 +23,7 @@ contract WakuRlnV2Test is Test {
         (w, deploymentConfig) = deployment.run();
     }
 
-    function test__ValidRegistration() external {
+    function test__ValidRegistration__kats() external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
         uint32 userMessageLimit = 2;
@@ -44,5 +47,91 @@ contract WakuRlnV2Test is Test {
             13_801_897_483_540_040_307_162_267_952_866_411_686_127_372_014_953_358_983_481_592_640_000_001_877_295
         );
         vm.resumeGasMetering();
+    }
+
+    function test__ValidRegistration(uint256 idCommitment, uint32 userMessageLimit) external {
+        vm.assume(w.isValidCommitment(idCommitment) && w.isValidUserMessageLimit(userMessageLimit));
+
+        assertEq(w.memberExists(idCommitment), false);
+        w.register(idCommitment, userMessageLimit);
+        uint256[] memory commitments = w.getCommitments(0, 1);
+        assertEq(commitments.length, 1);
+        uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
+        assertEq(commitments[0], rateCommitment);
+    }
+
+    function test__InvalidRegistration__InvalidIdCommitment__Zero() external {
+        uint256 idCommitment = 0;
+        uint32 userMessageLimit = 2;
+        vm.expectRevert(abi.encodeWithSelector(InvalidIdCommitment.selector, 0));
+        w.register(idCommitment, userMessageLimit);
+    }
+
+    function test__InvalidRegistration__InvalidIdCommitment__LargerThanField() external {
+        uint256 idCommitment = w.Q() + 1;
+        uint32 userMessageLimit = 2;
+        vm.expectRevert(abi.encodeWithSelector(InvalidIdCommitment.selector, idCommitment));
+        w.register(idCommitment, userMessageLimit);
+    }
+
+    function test__InvalidRegistration__InvalidUserMessageLimit__Zero() external {
+        uint256 idCommitment = 2;
+        uint32 userMessageLimit = 0;
+        vm.expectRevert(abi.encodeWithSelector(InvalidUserMessageLimit.selector, 0));
+        w.register(idCommitment, userMessageLimit);
+    }
+
+    function test__InvalidRegistration__InvalidUserMessageLimit__LargerThanMax() external {
+        uint256 idCommitment = 2;
+        uint32 userMessageLimit = w.MAX_MESSAGE_LIMIT() + 1;
+        vm.expectRevert(abi.encodeWithSelector(InvalidUserMessageLimit.selector, userMessageLimit));
+        w.register(idCommitment, userMessageLimit);
+    }
+
+    function test__InvalidRegistration__DuplicateIdCommitment() external {
+        uint256 idCommitment = 2;
+        uint32 userMessageLimit = 2;
+        w.register(idCommitment, userMessageLimit);
+        vm.expectRevert(DuplicateIdCommitment.selector);
+        w.register(idCommitment, userMessageLimit);
+    }
+
+    function test__InvalidRegistration__FullTree() external {
+        uint32 userMessageLimit = 2;
+        // we modify the set_size to be small so the test can run faster
+        stdstore.target(address(w)).sig("SET_SIZE()").checked_write(1);
+        vm.pauseGasMetering();
+        w.register(1, userMessageLimit);
+        vm.resumeGasMetering();
+        vm.expectRevert(FullTree.selector);
+        w.register(2, userMessageLimit);
+    }
+
+    function test__InvalidPaginationQuery__StartIndexGTEndIndex() external {
+        vm.expectRevert(abi.encodeWithSelector(InvalidPaginationQuery.selector, 1, 0));
+        w.getCommitments(1, 0);
+    }
+
+    function test__InvalidPaginationQuery__EndIndexGTIdCommitmentIndex() external {
+        vm.expectRevert(abi.encodeWithSelector(InvalidPaginationQuery.selector, 0, 2));
+        w.getCommitments(0, 2);
+    }
+
+    function test__ValidPaginationQuery(uint32 idCommitmentsLength) external {
+        vm.assume(idCommitmentsLength > 0 && idCommitmentsLength <= 100);
+        uint32 userMessageLimit = 2;
+
+        vm.pauseGasMetering();
+        for (uint256 i = 0; i < idCommitmentsLength; i++) {
+            w.register(i + 1, userMessageLimit);
+        }
+        vm.resumeGasMetering();
+
+        uint256[] memory commitments = w.getCommitments(0, idCommitmentsLength);
+        assertEq(commitments.length, idCommitmentsLength);
+        for (uint256 i = 0; i < idCommitmentsLength; i++) {
+            uint256 rateCommitment = PoseidonT3.hash([i + 1, userMessageLimit]);
+            assertEq(commitments[i], rateCommitment);
+        }
     }
 }

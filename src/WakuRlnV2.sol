@@ -32,7 +32,7 @@ contract WakuRlnV2 {
     uint8 public constant DEPTH = 20;
 
     /// @notice The size of the merkle tree, i.e 2^depth
-    uint32 public immutable SET_SIZE;
+    uint32 public SET_SIZE;
 
     /// @notice The index of the next member to be registered
     uint32 public idCommitmentIndex = 0;
@@ -64,9 +64,8 @@ contract WakuRlnV2 {
         _;
     }
 
-    modifier onlyValidUserMessageLimit(uint32 messageLimit) {
-        if (messageLimit > MAX_MESSAGE_LIMIT) revert InvalidUserMessageLimit(messageLimit);
-        if (messageLimit == 0) revert InvalidUserMessageLimit(messageLimit);
+    modifier onlyValidUserMessageLimit(uint32 userMessageLimit) {
+        if (!isValidUserMessageLimit(userMessageLimit)) revert InvalidUserMessageLimit(userMessageLimit);
         _;
     }
 
@@ -114,6 +113,10 @@ contract WakuRlnV2 {
 
     function isValidCommitment(uint256 idCommitment) public pure returns (bool) {
         return idCommitment != 0 && idCommitment < Q;
+    }
+
+    function isValidUserMessageLimit(uint32 userMessageLimit) public view returns (bool) {
+        return userMessageLimit > 0 && userMessageLimit <= MAX_MESSAGE_LIMIT;
     }
 
     function indexToCommitment(uint32 index) public view returns (uint256) {
