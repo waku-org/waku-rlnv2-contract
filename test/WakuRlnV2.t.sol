@@ -46,6 +46,11 @@ contract WakuRlnV2Test is Test {
             w.root(),
             13_801_897_483_540_040_307_162_267_952_866_411_686_127_372_014_953_358_983_481_592_640_000_001_877_295
         );
+        (uint32 fetchedUserMessageLimit2, uint32 index2, uint256 rateCommitment2) =
+            w.idCommitmentToMetadata(idCommitment);
+        assertEq(fetchedUserMessageLimit2, userMessageLimit);
+        assertEq(index2, 0);
+        assertEq(rateCommitment2, rateCommitment);
         vm.resumeGasMetering();
     }
 
@@ -58,6 +63,12 @@ contract WakuRlnV2Test is Test {
         assertEq(commitments.length, 1);
         uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
         assertEq(commitments[0], rateCommitment);
+
+        (uint32 fetchedUserMessageLimit, uint32 index, uint256 fetchedRateCommitment) =
+            w.idCommitmentToMetadata(idCommitment);
+        assertEq(fetchedUserMessageLimit, userMessageLimit);
+        assertEq(index, 0);
+        assertEq(fetchedRateCommitment, rateCommitment);
     }
 
     function test__InvalidRegistration__InvalidIdCommitment__Zero() external {

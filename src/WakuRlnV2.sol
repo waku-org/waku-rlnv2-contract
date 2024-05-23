@@ -37,6 +37,7 @@ contract WakuRlnV2 {
     /// @notice The index of the next member to be registered
     uint32 public idCommitmentIndex = 0;
 
+    /// @notice the membership metadata of the member
     struct MembershipInfo {
         /// @notice the user message limit of each member
         uint32 userMessageLimit;
@@ -59,16 +60,21 @@ contract WakuRlnV2 {
     /// @param index The index of the member in the set
     event MemberRegistered(uint256 idCommitment, uint32 userMessageLimit, uint32 index);
 
+    /// @notice the modifier to check if the idCommitment is valid
+    /// @param idCommitment The idCommitment of the member
     modifier onlyValidIdCommitment(uint256 idCommitment) {
         if (!isValidCommitment(idCommitment)) revert InvalidIdCommitment(idCommitment);
         _;
     }
 
+    /// @notice the modifier to check if the userMessageLimit is valid
+    /// @param userMessageLimit The user message limit
     modifier onlyValidUserMessageLimit(uint32 userMessageLimit) {
         if (!isValidUserMessageLimit(userMessageLimit)) revert InvalidUserMessageLimit(userMessageLimit);
         _;
     }
 
+    /// @notice the constructor of the contract
     constructor(uint32 maxMessageLimit) {
         MAX_MESSAGE_LIMIT = maxMessageLimit;
         SET_SIZE = uint32(1 << DEPTH);
@@ -76,6 +82,9 @@ contract WakuRlnV2 {
         LazyIMT.init(imtData, DEPTH);
     }
 
+    /// @notice Checks if a member exists
+    /// @param idCommitment The idCommitment of the member
+    /// @return true if the member exists, false otherwise
     function memberExists(uint256 idCommitment) public view returns (bool) {
         MembershipInfo memory member = memberInfo[idCommitment];
         return member.userMessageLimit > 0 && member.index >= 0;
@@ -111,18 +120,39 @@ contract WakuRlnV2 {
         idCommitmentIndex += 1;
     }
 
+    /// @notice Checks if a commitment is valid
+    /// @param idCommitment The idCommitment of the member
+    /// @return true if the commitment is valid, false otherwise
     function isValidCommitment(uint256 idCommitment) public pure returns (bool) {
         return idCommitment != 0 && idCommitment < Q;
     }
 
+    /// @notice Checks if a user message limit is valid
+    /// @param userMessageLimit The user message limit
+    /// @return true if the user message limit is valid, false otherwise
     function isValidUserMessageLimit(uint32 userMessageLimit) public view returns (bool) {
         return userMessageLimit > 0 && userMessageLimit <= MAX_MESSAGE_LIMIT;
     }
 
+    /// @notice Returns the rateCommitment of a member
+    /// @param index The index of the member
+    /// @return The rateCommitment of the member
     function indexToCommitment(uint32 index) public view returns (uint256) {
         return imtData.elements[LazyIMT.indexForElement(0, index)];
     }
 
+    /// @notice Returns the metadata of a member
+    /// @param idCommitment The idCommitment of the member
+    /// @return The metadata of the member (userMessageLimit, index, rateCommitment)
+    function idCommitmentToMetadata(uint256 idCommitment) public view returns (uint32, uint32, uint256) {
+        MembershipInfo memory member = memberInfo[idCommitment];
+        return (member.userMessageLimit, member.index, indexToCommitment(member.index));
+    }
+
+    /// @notice Returns the commitments of a range of members
+    /// @param startIndex The start index of the range
+    /// @param endIndex The end index of the range
+    /// @return The commitments of the members
     function getCommitments(uint32 startIndex, uint32 endIndex) public view returns (uint256[] memory) {
         if (startIndex >= endIndex) revert InvalidPaginationQuery(startIndex, endIndex);
         if (endIndex > idCommitmentIndex) revert InvalidPaginationQuery(startIndex, endIndex);
@@ -134,10 +164,15 @@ contract WakuRlnV2 {
         return commitments;
     }
 
+    /// @notice Returns the root of the IMT
+    /// @return The root of the IMT
     function root() external view returns (uint256) {
         return LazyIMT.root(imtData, DEPTH);
     }
 
+    /// @notice Returns the merkle proof elements of a given membership
+    /// @param index The index of the member
+    /// @return The merkle proof elements of the member
     function merkleProofElements(uint40 index) public view returns (uint256[] memory) {
         return LazyIMT.merkleProofElements(imtData, index, DEPTH);
     }
