@@ -109,13 +109,10 @@ contract WakuRlnV2Test is Test {
 
     function test__InvalidRegistration__FullTree() external {
         uint32 userMessageLimit = 2;
-        // we modify the set_size to be small so the test can run faster
-        stdstore.target(address(w)).sig("SET_SIZE()").checked_write(1);
-        vm.pauseGasMetering();
-        w.register(1, userMessageLimit);
-        vm.resumeGasMetering();
+        // we progress the tree to the last leaf
+        stdstore.target(address(w)).sig("idCommitmentIndex()").checked_write(1 << w.DEPTH());
         vm.expectRevert(FullTree.selector);
-        w.register(2, userMessageLimit);
+        w.register(1, userMessageLimit);
     }
 
     function test__InvalidPaginationQuery__StartIndexGTEndIndex() external {

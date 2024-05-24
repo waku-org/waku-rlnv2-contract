@@ -32,7 +32,7 @@ contract WakuRlnV2 {
     uint8 public constant DEPTH = 20;
 
     /// @notice The size of the merkle tree, i.e 2^depth
-    uint32 public SET_SIZE;
+    uint32 public immutable SET_SIZE;
 
     /// @notice The index of the next member to be registered
     uint32 public idCommitmentIndex = 0;
