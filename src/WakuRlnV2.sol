@@ -82,12 +82,41 @@ contract WakuRlnV2 {
         LazyIMT.init(imtData, DEPTH);
     }
 
+    /// @notice Checks if a commitment is valid
+    /// @param idCommitment The idCommitment of the member
+    /// @return true if the commitment is valid, false otherwise
+    function isValidCommitment(uint256 idCommitment) public pure returns (bool) {
+        return idCommitment != 0 && idCommitment < Q;
+    }
+
+    /// @notice Checks if a user message limit is valid
+    /// @param userMessageLimit The user message limit
+    /// @return true if the user message limit is valid, false otherwise
+    function isValidUserMessageLimit(uint32 userMessageLimit) public view returns (bool) {
+        return userMessageLimit > 0 && userMessageLimit <= MAX_MESSAGE_LIMIT;
+    }
+
+    /// @notice Returns the rateCommitment of a member
+    /// @param index The index of the member
+    /// @return The rateCommitment of the member
+    function indexToCommitment(uint32 index) internal view returns (uint256) {
+        return imtData.elements[LazyIMT.indexForElement(0, index)];
+    }
+
+    /// @notice Returns the metadata of a member
+    /// @param idCommitment The idCommitment of the member
+    /// @return The metadata of the member (userMessageLimit, index, rateCommitment)
+    function idCommitmentToMetadata(uint256 idCommitment) public view returns (uint32, uint32, uint256) {
+        MembershipInfo memory member = memberInfo[idCommitment];
+        return (member.userMessageLimit, member.index, indexToCommitment(member.index));
+    }
+
     /// @notice Checks if a member exists
     /// @param idCommitment The idCommitment of the member
     /// @return true if the member exists, false otherwise
     function memberExists(uint256 idCommitment) public view returns (bool) {
-        MembershipInfo memory member = memberInfo[idCommitment];
-        return member.userMessageLimit > 0 && member.index >= 0;
+        (uint32 userMessageLimit, uint32 index, uint256 rateCommitment) = idCommitmentToMetadata(idCommitment);
+        return userMessageLimit > 0 && index >= 0 && rateCommitment != 0;
     }
 
     /// Allows a user to register as a member
@@ -118,35 +147,6 @@ contract WakuRlnV2 {
 
         emit MemberRegistered(idCommitment, userMessageLimit, idCommitmentIndex);
         idCommitmentIndex += 1;
-    }
-
-    /// @notice Checks if a commitment is valid
-    /// @param idCommitment The idCommitment of the member
-    /// @return true if the commitment is valid, false otherwise
-    function isValidCommitment(uint256 idCommitment) public pure returns (bool) {
-        return idCommitment != 0 && idCommitment < Q;
-    }
-
-    /// @notice Checks if a user message limit is valid
-    /// @param userMessageLimit The user message limit
-    /// @return true if the user message limit is valid, false otherwise
-    function isValidUserMessageLimit(uint32 userMessageLimit) public view returns (bool) {
-        return userMessageLimit > 0 && userMessageLimit <= MAX_MESSAGE_LIMIT;
-    }
-
-    /// @notice Returns the rateCommitment of a member
-    /// @param index The index of the member
-    /// @return The rateCommitment of the member
-    function indexToCommitment(uint32 index) public view returns (uint256) {
-        return imtData.elements[LazyIMT.indexForElement(0, index)];
-    }
-
-    /// @notice Returns the metadata of a member
-    /// @param idCommitment The idCommitment of the member
-    /// @return The metadata of the member (userMessageLimit, index, rateCommitment)
-    function idCommitmentToMetadata(uint256 idCommitment) public view returns (uint32, uint32, uint256) {
-        MembershipInfo memory member = memberInfo[idCommitment];
-        return (member.userMessageLimit, member.index, indexToCommitment(member.index));
     }
 
     /// @notice Returns the commitments of a range of members

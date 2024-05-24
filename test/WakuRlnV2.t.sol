@@ -38,7 +38,6 @@ contract WakuRlnV2Test is Test {
         // kats from zerokit
         uint256 rateCommitment =
             4_699_387_056_273_519_054_140_667_386_511_343_037_709_699_938_246_587_880_795_929_666_834_307_503_001;
-        assertEq(w.indexToCommitment(0), rateCommitment);
         uint256[] memory commitments = w.getCommitments(0, 1);
         assertEq(commitments.length, 1);
         assertEq(commitments[index], rateCommitment);
@@ -69,6 +68,14 @@ contract WakuRlnV2Test is Test {
         assertEq(fetchedUserMessageLimit, userMessageLimit);
         assertEq(index, 0);
         assertEq(fetchedRateCommitment, rateCommitment);
+    }
+
+    function test__IdCommitmentToMetadata__DoesntExist() external {
+        uint256 idCommitment = 2;
+        (uint32 userMessageLimit, uint32 index, uint256 rateCommitment) = w.idCommitmentToMetadata(idCommitment);
+        assertEq(userMessageLimit, 0);
+        assertEq(index, 0);
+        assertEq(rateCommitment, 0);
     }
 
     function test__InvalidRegistration__InvalidIdCommitment__Zero() external {
