@@ -126,6 +126,16 @@ contract WakuRlnV2Test is Test {
         w.getCommitments(0, 2);
     }
 
+    function test__ValidPaginationQuery__OneElement() external {
+        uint32 userMessageLimit = 2;
+        uint256 idCommitment = 1;
+        w.register(idCommitment, userMessageLimit);
+        uint256[] memory commitments = w.getCommitments(0, 0);
+        assertEq(commitments.length, 1);
+        uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
+        assertEq(commitments[0], rateCommitment);
+    }
+
     function test__ValidPaginationQuery(uint32 idCommitmentsLength) external {
         vm.assume(idCommitmentsLength > 0 && idCommitmentsLength <= 100);
         uint32 userMessageLimit = 2;

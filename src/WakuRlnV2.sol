@@ -154,7 +154,7 @@ contract WakuRlnV2 {
     /// @param endIndex The end index of the range
     /// @return The commitments of the members
     function getCommitments(uint32 startIndex, uint32 endIndex) public view returns (uint256[] memory) {
-        if (startIndex >= endIndex) revert InvalidPaginationQuery(startIndex, endIndex);
+        if (startIndex > endIndex) revert InvalidPaginationQuery(startIndex, endIndex);
         if (endIndex > idCommitmentIndex) revert InvalidPaginationQuery(startIndex, endIndex);
 
         uint256[] memory commitments = new uint256[](endIndex - startIndex + 1);
