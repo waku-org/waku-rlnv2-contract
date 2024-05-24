@@ -157,8 +157,8 @@ contract WakuRlnV2 {
         if (startIndex >= endIndex) revert InvalidPaginationQuery(startIndex, endIndex);
         if (endIndex > idCommitmentIndex) revert InvalidPaginationQuery(startIndex, endIndex);
 
-        uint256[] memory commitments = new uint256[](endIndex - startIndex);
-        for (uint32 i = startIndex; i < endIndex; i++) {
+        uint256[] memory commitments = new uint256[](endIndex - startIndex + 1);
+        for (uint32 i = startIndex; i <= endIndex; i++) {
             commitments[i - startIndex] = indexToCommitment(i);
         }
         return commitments;

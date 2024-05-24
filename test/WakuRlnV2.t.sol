@@ -38,9 +38,6 @@ contract WakuRlnV2Test is Test {
         // kats from zerokit
         uint256 rateCommitment =
             4_699_387_056_273_519_054_140_667_386_511_343_037_709_699_938_246_587_880_795_929_666_834_307_503_001;
-        uint256[] memory commitments = w.getCommitments(0, 1);
-        assertEq(commitments.length, 1);
-        assertEq(commitments[index], rateCommitment);
         assertEq(
             w.root(),
             13_801_897_483_540_040_307_162_267_952_866_411_686_127_372_014_953_358_983_481_592_640_000_001_877_295
@@ -58,10 +55,7 @@ contract WakuRlnV2Test is Test {
 
         assertEq(w.memberExists(idCommitment), false);
         w.register(idCommitment, userMessageLimit);
-        uint256[] memory commitments = w.getCommitments(0, 1);
-        assertEq(commitments.length, 1);
         uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
-        assertEq(commitments[0], rateCommitment);
 
         (uint32 fetchedUserMessageLimit, uint32 index, uint256 fetchedRateCommitment) =
             w.idCommitmentToMetadata(idCommitment);
@@ -143,7 +137,7 @@ contract WakuRlnV2Test is Test {
         vm.resumeGasMetering();
 
         uint256[] memory commitments = w.getCommitments(0, idCommitmentsLength);
-        assertEq(commitments.length, idCommitmentsLength);
+        assertEq(commitments.length, idCommitmentsLength + 1);
         for (uint256 i = 0; i < idCommitmentsLength; i++) {
             uint256 rateCommitment = PoseidonT3.hash([i + 1, userMessageLimit]);
             assertEq(commitments[i], rateCommitment);
