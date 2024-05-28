@@ -6,8 +6,7 @@ import { BaseScript } from "./Base.s.sol";
 import { DeploymentConfig } from "./DeploymentConfig.s.sol";
 
 contract Deploy is BaseScript {
-    function run() public returns (WakuRlnV2 w, DeploymentConfig deploymentConfig) {
-        deploymentConfig = new DeploymentConfig(broadcaster);
+    function run() public broadcast returns (WakuRlnV2 w) {
         w = new WakuRlnV2(20);
     }
 }
