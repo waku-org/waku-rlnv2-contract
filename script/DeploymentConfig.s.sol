@@ -21,12 +21,18 @@ contract DeploymentConfig is Script {
         deployer = _broadcaster;
         if (block.chainid == 31_337) {
             activeNetworkConfig = getOrCreateAnvilEthConfig();
+        } else if (block.chainid == 11_155_111) {
+            activeNetworkConfig = getOrCreateSepoliaConfig();
         } else {
             revert DeploymentConfig_NoConfigForChain(block.chainid);
         }
     }
 
     function getOrCreateAnvilEthConfig() public view returns (NetworkConfig memory) {
+        return NetworkConfig({ deployer: deployer });
+    }
+
+    function getOrCreateSepoliaConfig() public view returns (NetworkConfig memory) {
         return NetworkConfig({ deployer: deployer });
     }
 

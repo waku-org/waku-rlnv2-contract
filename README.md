@@ -56,7 +56,7 @@ $ forge coverage
 
 ### Deploy
 
-Deploy to Anvil:
+#### Deploy to Anvil:
 
 ```sh
 $ forge script script/Deploy.s.sol --broadcast --fork-url http://localhost:8545
@@ -65,8 +65,16 @@ $ forge script script/Deploy.s.sol --broadcast --fork-url http://localhost:8545
 For this script to work, you need to have a `MNEMONIC` environment variable set to a valid
 [BIP39 mnemonic](https://iancoleman.io/bip39/).
 
-For instructions on how to deploy to a testnet or mainnet, check out the
-[Solidity Scripting](https://book.getfoundry.sh/tutorials/solidity-scripting.html) tutorial.
+#### Deploy to Sepolia:
+
+Ensure that you use the [cast wallet](https://book.getfoundry.sh/reference/cast/cast-wallet) to store private keys that
+will be used in deployments.
+
+```sh
+$ export RPC_URL=<rpc-url>
+$ export ACCOUNT=<account name in foundry keystore>
+$ pnpm deploy:sepolia
+```
 
 ### Format
 

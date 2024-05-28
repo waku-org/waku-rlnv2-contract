@@ -20,7 +20,7 @@ contract WakuRlnV2Test is Test {
 
     function setUp() public virtual {
         Deploy deployment = new Deploy();
-        (w, deploymentConfig) = deployment.run();
+        w = deployment.run();
     }
 
     function test__ValidRegistration__kats() external {
