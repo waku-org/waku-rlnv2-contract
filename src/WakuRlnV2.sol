@@ -108,6 +108,10 @@ contract WakuRlnV2 {
     /// @return The metadata of the member (userMessageLimit, index, rateCommitment)
     function idCommitmentToMetadata(uint256 idCommitment) public view returns (uint32, uint32, uint256) {
         MembershipInfo memory member = memberInfo[idCommitment];
+        // we cannot call indexToCommitment for 0 index if the member doesn't exist
+        if (member.userMessageLimit == 0) {
+            return (0, 0, 0);
+        }
         return (member.userMessageLimit, member.index, indexToCommitment(member.index));
     }
 
@@ -115,8 +119,8 @@ contract WakuRlnV2 {
     /// @param idCommitment The idCommitment of the member
     /// @return true if the member exists, false otherwise
     function memberExists(uint256 idCommitment) public view returns (bool) {
-        (uint32 userMessageLimit, uint32 index, uint256 rateCommitment) = idCommitmentToMetadata(idCommitment);
-        return userMessageLimit > 0 && index >= 0 && rateCommitment != 0;
+        (,, uint256 rateCommitment) = idCommitmentToMetadata(idCommitment);
+        return rateCommitment != 0;
     }
 
     /// Allows a user to register as a member
