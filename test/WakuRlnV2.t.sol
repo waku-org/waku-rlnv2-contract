@@ -47,7 +47,7 @@ contract WakuRlnV2Test is Test {
         assertEq(fetchedUserMessageLimit2, userMessageLimit);
         assertEq(index2, 0);
         assertEq(rateCommitment2, rateCommitment);
-        uint256[] memory proof = w.merkleProofElements(0);
+        uint256[20] memory proof = w.merkleProofElements(0);
         uint256[20] memory expectedProof = [
             0,
             14_744_269_619_966_411_208_579_211_824_598_458_697_587_494_354_926_760_081_771_325_075_741_142_829_156,

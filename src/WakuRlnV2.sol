@@ -177,7 +177,12 @@ contract WakuRlnV2 {
     /// @notice Returns the merkle proof elements of a given membership
     /// @param index The index of the member
     /// @return The merkle proof elements of the member
-    function merkleProofElements(uint40 index) public view returns (uint256[] memory) {
-        return LazyIMT.merkleProofElements(imtData, index, DEPTH);
+    function merkleProofElements(uint40 index) public view returns (uint256[DEPTH] memory) {
+        uint256[DEPTH] memory castedProof;
+        uint256[] memory proof = LazyIMT.merkleProofElements(imtData, index, DEPTH);
+        for (uint8 i = 0; i < DEPTH; i++) {
+            castedProof[i] = proof[i];
+        }
+        return castedProof;
     }
 }
