@@ -5,7 +5,7 @@
   block_timestamp = 1_680_220_800 # March 31, 2023 at 00:00 GMT
   bytecode_hash = "none"
   cbor_metadata = false
-  evm_version = "paris"
+  evm_version = "cancun"
   fuzz = { runs = 1_000 }
   gas_reports = ["*"]
   libs = ["lib"]
@@ -13,9 +13,14 @@
   optimizer_runs = 10_000
   out = "out"
   script = "script"
-  solc = "0.8.19"
+  solc = "0.8.24"
   src = "src"
   test = "test"
+  ast = true
+  ffi = true
+  build_info = true
+  extra_output = ["storageLayout"]
+  fs_permissions = [{ access = "read", path = "./out"}]
 
 [fuzz]
 max_test_rejects = 128_000
@@ -41,3 +46,6 @@ max_test_rejects = 128_000
 [rpc_endpoints]
   localhost = "http://localhost:8545"
   sepolia = "https://eth-sepolia.g.alchemy.com/v2/${API_KEY_ALCHEMY}"
+
+[profile.sepolia]
+libraries = ["node_modules/@zk-kit/imt.sol/contracts/LazyIMT.sol:LazyIMT:0x22317F732AE9f9015b0866d03319a441FB42cd7f", "node_modules/poseidon-solidity/PoseidonT3.sol:PoseidonT3:0x4CF6285AC1E3ddAD6E1E378146CbCd3A6CA3Ed60"]

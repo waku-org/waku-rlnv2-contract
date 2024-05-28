@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: MIT
-
-pragma solidity 0.8.19;
+pragma solidity 0.8.24;
 
 import { LazyIMT, LazyIMTData } from "@zk-kit/imt.sol/LazyIMT.sol";
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
+
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /// The tree is full
 error FullTree();
@@ -20,22 +22,22 @@ error InvalidUserMessageLimit(uint32 messageLimit);
 /// Invalid pagination query
 error InvalidPaginationQuery(uint256 startIndex, uint256 endIndex);
 
-contract WakuRlnV2 {
+contract WakuRlnV2 is Initializable, OwnableUpgradeable {
     /// @notice The Field
     uint256 public constant Q =
         21_888_242_871_839_275_222_246_405_745_257_275_088_548_364_400_416_034_343_698_204_186_575_808_495_617;
 
     /// @notice The max message limit per epoch
-    uint32 public immutable MAX_MESSAGE_LIMIT;
+    uint32 public MAX_MESSAGE_LIMIT;
 
     /// @notice The depth of the merkle tree
     uint8 public constant DEPTH = 20;
 
     /// @notice The size of the merkle tree, i.e 2^depth
-    uint32 public immutable SET_SIZE;
+    uint32 public SET_SIZE;
 
     /// @notice The index of the next member to be registered
-    uint32 public idCommitmentIndex = 0;
+    uint32 public idCommitmentIndex;
 
     /// @notice the membership metadata of the member
     struct MembershipInfo {
@@ -49,7 +51,7 @@ contract WakuRlnV2 {
     mapping(uint256 => MembershipInfo) public memberInfo;
 
     /// @notice the deployed block number
-    uint32 public immutable deployedBlockNumber;
+    uint32 public deployedBlockNumber;
 
     /// @notice the stored imt data
     LazyIMTData public imtData;
@@ -74,12 +76,13 @@ contract WakuRlnV2 {
         _;
     }
 
-    /// @notice the constructor of the contract
-    constructor(uint32 maxMessageLimit) {
+    function initialize(address initialOwner, uint32 maxMessageLimit) public initializer {
+        __Ownable_init(initialOwner);
         MAX_MESSAGE_LIMIT = maxMessageLimit;
         SET_SIZE = uint32(1 << DEPTH);
         deployedBlockNumber = uint32(block.number);
         LazyIMT.init(imtData, DEPTH);
+        idCommitmentIndex = 0;
     }
 
     /// @notice Checks if a commitment is valid

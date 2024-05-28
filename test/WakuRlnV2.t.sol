@@ -90,7 +90,7 @@ contract WakuRlnV2Test is Test {
         assertEq(fetchedRateCommitment, rateCommitment);
     }
 
-    function test__IdCommitmentToMetadata__DoesntExist() external {
+    function test__IdCommitmentToMetadata__DoesntExist() external view {
         uint256 idCommitment = 2;
         (uint32 userMessageLimit, uint32 index, uint256 rateCommitment) = w.idCommitmentToMetadata(idCommitment);
         assertEq(userMessageLimit, 0);
