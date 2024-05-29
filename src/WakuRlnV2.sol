@@ -77,7 +77,6 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         _;
     }
 
-    /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }

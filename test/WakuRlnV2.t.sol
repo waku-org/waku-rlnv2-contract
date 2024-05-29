@@ -3,7 +3,7 @@ pragma solidity >=0.8.19 <0.9.0;
 
 import { Test } from "forge-std/Test.sol";
 import { stdStorage, StdStorage } from "forge-std/Test.sol";
-
+import "forge-std/console.sol";
 import { Deploy } from "../script/Deploy.s.sol";
 import { DeploymentConfig } from "../script/DeploymentConfig.s.sol";
 import "../src/WakuRlnV2.sol";
@@ -190,5 +190,13 @@ contract WakuRlnV2Test is Test {
             uint256 rateCommitment = PoseidonT3.hash([i + 1, userMessageLimit]);
             assertEq(commitments[i], rateCommitment);
         }
+    }
+
+    function test__Upgrade() external {
+        address newImplementation = address(new WakuRlnV2());
+        Deploy deployment = new Deploy();
+        console.log("OWNER: %s", w.owner());
+        deployment.upgrade(address(w), newImplementation, 30);
+        assertEq(w.MAX_MESSAGE_LIMIT(), 30);
     }
 }

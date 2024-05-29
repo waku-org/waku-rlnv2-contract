@@ -15,15 +15,7 @@
     "@zk-kit/imt.sol": "https://gitpkg.now.sh/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500",
     "poseidon-solidity": "^0.0.5"
   },
-  "keywords": [
-    "blockchain",
-    "ethereum",
-    "forge",
-    "foundry",
-    "smart-contracts",
-    "solidity",
-    "template"
-  ],
+  "keywords": ["blockchain", "ethereum", "forge", "foundry", "smart-contracts", "solidity", "template"],
   "private": true,
   "scripts": {
     "clean": "rm -rf cache out",
@@ -34,8 +26,8 @@
     "gas-report": "forge test --gas-report 2>&1 | (tee /dev/tty | awk '/Test result:/ {found=1; buffer=\"\"; next} found && !/Ran/ {buffer=buffer $0 ORS} /Ran/ {found=0} END {printf \"%s\", buffer}' > .gas-report)",
     "release": "commit-and-tag-version",
     "adorno": "pnpm prettier:write && forge fmt && forge snapshot && pnpm gas-report",
-    "deploy:sepolia": "./envCheck.sh && FOUNDRY_PROFILE=sepolia forge script --chain sepolia script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast --verify -vv --account $ACCOUNT --legacy",
-    "deploy:cardona": "./envCheck.sh && FOUNDRY_PROFILE=cardona forge script script/Deploy.s.sol:Deploy --chain 2442 --rpc-url https://rpc.cardona.zkevm-rpc.com --broadcast --verify -vv --account rln --legacy",
-    "deploy:localhost": "./envCheck.sh && forge script script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast -vv --account $ACCOUNT"
+    "deploy:sepolia": "./envCheck.sh && FOUNDRY_PROFILE=sepolia forge script --chain sepolia script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
+    "deploy:cardona": "./envCheck.sh && FOUNDRY_PROFILE=cardona forge script script/Deploy.s.sol:Deploy --chain 2442 --rpc-url https://rpc.cardona.zkevm-rpc.com --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
+    "deploy:localhost": "./envCheck.sh && forge script script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast -vv --account $ACCOUNT --sender $ETH_FROM"
   }
 }
