@@ -18,9 +18,9 @@ contract Deploy is BaseScript {
         w = WakuRlnV2(proxy);
     }
 
-    function upgrade(address proxy, address newImpl, uint32 maxMessageLimit) public {
+    function upgrade(address proxy, address newImpl) public {
         vm.startBroadcast(msg.sender);
-        bytes memory data = abi.encodeCall(WakuRlnV2.initialize, (msg.sender, maxMessageLimit));
+        bytes memory data;
         UUPSUpgradeable(proxy).upgradeToAndCall(newImpl, data);
         vm.stopBroadcast();
     }

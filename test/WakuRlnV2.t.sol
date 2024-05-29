@@ -195,8 +195,11 @@ contract WakuRlnV2Test is Test {
     function test__Upgrade() external {
         address newImplementation = address(new WakuRlnV2());
         Deploy deployment = new Deploy();
-        console.log("OWNER: %s", w.owner());
-        deployment.upgrade(address(w), newImplementation, 30);
-        assertEq(w.MAX_MESSAGE_LIMIT(), 30);
+        deployment.upgrade(address(w), newImplementation);
+        // ensure that the implementation is set correctly
+        address fetchedImpl = address(
+            uint160(uint256(vm.load(address(w), 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc)))
+        );
+        assertEq(fetchedImpl, newImplementation);
     }
 }
