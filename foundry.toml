@@ -16,11 +16,6 @@
   solc = "0.8.24"
   src = "src"
   test = "test"
-  ast = true
-  ffi = true
-  build_info = true
-  extra_output = ["storageLayout"]
-  fs_permissions = [{ access = "read", path = "./out"}]
 
 [fuzz]
 max_test_rejects = 128_000

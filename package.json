@@ -35,7 +35,7 @@
     "release": "commit-and-tag-version",
     "adorno": "pnpm prettier:write && forge fmt && forge snapshot && pnpm gas-report",
     "deploy:sepolia": "./envCheck.sh && FOUNDRY_PROFILE=sepolia forge script --chain sepolia script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
-    "deploy:cardona": "./envCheck.sh && FOUNDRY_PROFILE=cardona forge script script/Deploy.s.sol:Deploy --chain 2442 --rpc-url https://rpc.cardona.zkevm-rpc.com --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
+    "deploy:cardona": "./envCheck.sh && FOUNDRY_PROFILE=cardona forge script --chain 2442 script/Deploy.s.sol:Deploy --rpc-url https://rpc.cardona.zkevm-rpc.com --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
     "deploy:localhost": "./envCheck.sh && forge script script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast -vv --account $ACCOUNT --sender $ETH_FROM"
   }
 }

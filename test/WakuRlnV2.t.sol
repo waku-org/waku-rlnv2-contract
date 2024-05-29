@@ -197,6 +197,8 @@ contract WakuRlnV2Test is Test {
         Deploy deployment = new Deploy();
         deployment.upgrade(address(w), newImplementation);
         // ensure that the implementation is set correctly
+        // ref:
+        // https://github.com/OpenZeppelin/openzeppelin-foundry-upgrades/blob/4cd15fc50b141c77d8cc9ff8efb44d00e841a299/src/internal/Core.sol#L289
         address fetchedImpl = address(
             uint160(uint256(vm.load(address(w), 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc)))
         );
