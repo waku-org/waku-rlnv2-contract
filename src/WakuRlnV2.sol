@@ -4,8 +4,9 @@ pragma solidity 0.8.24;
 import { LazyIMT, LazyIMTData } from "@zk-kit/imt.sol/LazyIMT.sol";
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
 
-import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /// The tree is full
 error FullTree();
@@ -22,7 +23,7 @@ error InvalidUserMessageLimit(uint32 messageLimit);
 /// Invalid pagination query
 error InvalidPaginationQuery(uint256 startIndex, uint256 endIndex);
 
-contract WakuRlnV2 is Initializable, OwnableUpgradeable {
+contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @notice The Field
     uint256 public constant Q =
         21_888_242_871_839_275_222_246_405_745_257_275_088_548_364_400_416_034_343_698_204_186_575_808_495_617;
@@ -76,14 +77,22 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable {
         _;
     }
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
     function initialize(address initialOwner, uint32 maxMessageLimit) public initializer {
         __Ownable_init(initialOwner);
+        __UUPSUpgradeable_init();
         MAX_MESSAGE_LIMIT = maxMessageLimit;
         SET_SIZE = uint32(1 << DEPTH);
         deployedBlockNumber = uint32(block.number);
         LazyIMT.init(imtData, DEPTH);
         idCommitmentIndex = 0;
     }
+
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     /// @notice Checks if a commitment is valid
     /// @param idCommitment The idCommitment of the member
