@@ -4,8 +4,8 @@ pragma solidity 0.8.24;
 import { LazyIMT, LazyIMTData } from "@zk-kit/imt.sol/LazyIMT.sol";
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
 
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 /// The tree is full
 error FullTree();
