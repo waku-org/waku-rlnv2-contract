@@ -16,3 +16,17 @@ contract Deploy is BaseScript {
         w = WakuRlnV2(proxy);
     }
 }
+
+contract DeployLibs is BaseScript {
+    function run() public broadcast returns (address poseidonT3, address lazyImt) {
+        bytes memory poseidonT3Bytecode = type(PoseidonT3).creationCode;
+        assembly {
+            poseidonT3 := create(0, add(poseidonT3Bytecode, 0x20), mload(poseidonT3Bytecode))
+        }
+
+        bytes memory lazyImtBytecode = type(LazyIMT).creationCode;
+        assembly {
+            lazyImt := create(0, add(lazyImtBytecode, 0x20), mload(lazyImtBytecode))
+        }
+    }
+}
