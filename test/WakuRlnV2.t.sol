@@ -3,12 +3,10 @@ pragma solidity >=0.8.19 <0.9.0;
 
 import { Test } from "forge-std/Test.sol";
 import { stdStorage, StdStorage } from "forge-std/Test.sol";
-import "forge-std/console.sol";
 import { Deploy } from "../script/Deploy.s.sol";
 import { DeploymentConfig } from "../script/DeploymentConfig.s.sol";
-import "../src/WakuRlnV2.sol";
+import "../src/WakuRlnV2.sol"; // solhint-disable-line
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
-import { LazyIMT } from "@zk-kit/imt.sol/LazyIMT.sol";
 
 contract WakuRlnV2Test is Test {
     using stdStorage for StdStorage;
@@ -198,6 +196,7 @@ contract WakuRlnV2Test is Test {
         deployment.upgrade(address(w), newImplementation);
         // ensure that the implementation is set correctly
         // ref:
+        // solhint-disable-next-line
         // https://github.com/OpenZeppelin/openzeppelin-foundry-upgrades/blob/4cd15fc50b141c77d8cc9ff8efb44d00e841a299/src/internal/Core.sol#L289
         address fetchedImpl = address(
             uint160(uint256(vm.load(address(w), 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc)))

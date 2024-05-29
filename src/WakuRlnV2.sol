@@ -91,7 +91,7 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         idCommitmentIndex = 0;
     }
 
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner { }
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner { } // solhint-disable-line
 
     /// @notice Checks if a commitment is valid
     /// @param idCommitment The idCommitment of the member
