@@ -2,15 +2,13 @@
 pragma solidity >=0.8.19 <0.9.0;
 
 import { Test } from "forge-std/Test.sol";
-import { stdStorage, StdStorage } from "forge-std/Test.sol";
 import { Deploy } from "../script/Deploy.s.sol";
 import { DeploymentConfig } from "../script/DeploymentConfig.s.sol";
 import "../src/WakuRlnV2.sol"; // solhint-disable-line
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 contract WakuRlnV2Test is Test {
-    using stdStorage for StdStorage;
-
     WakuRlnV2 internal w;
     address internal impl;
     DeploymentConfig internal deploymentConfig;
@@ -192,8 +190,8 @@ contract WakuRlnV2Test is Test {
 
     function test__Upgrade() external {
         address newImplementation = address(new WakuRlnV2());
-        Deploy deployment = new Deploy();
-        deployment.upgrade(address(w), newImplementation);
+        bytes memory data;
+        UUPSUpgradeable(address(w)).upgradeToAndCall(newImplementation, data);
         // ensure that the implementation is set correctly
         // ref:
         // solhint-disable-next-line

@@ -17,13 +17,6 @@ contract Deploy is BaseScript {
         address proxy = address(new ERC1967Proxy(impl, data));
         w = WakuRlnV2(proxy);
     }
-
-    function upgrade(address proxy, address newImpl) public {
-        vm.startBroadcast(msg.sender);
-        bytes memory data;
-        UUPSUpgradeable(proxy).upgradeToAndCall(newImpl, data);
-        vm.stopBroadcast();
-    }
 }
 
 contract DeployLibs is BaseScript {
