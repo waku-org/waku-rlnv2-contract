@@ -2,25 +2,22 @@
 pragma solidity >=0.8.19 <0.9.0;
 
 import { Test } from "forge-std/Test.sol";
-import { stdStorage, StdStorage } from "forge-std/Test.sol";
-
 import { Deploy } from "../script/Deploy.s.sol";
 import { DeploymentConfig } from "../script/DeploymentConfig.s.sol";
-import "../src/WakuRlnV2.sol";
+import "../src/WakuRlnV2.sol"; // solhint-disable-line
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
-import { LazyIMT } from "@zk-kit/imt.sol/LazyIMT.sol";
+import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 contract WakuRlnV2Test is Test {
-    using stdStorage for StdStorage;
-
     WakuRlnV2 internal w;
+    address internal impl;
     DeploymentConfig internal deploymentConfig;
 
     address internal deployer;
 
     function setUp() public virtual {
         Deploy deployment = new Deploy();
-        w = deployment.run();
+        (w, impl) = deployment.run();
     }
 
     function test__ValidRegistration__kats() external {
@@ -90,7 +87,7 @@ contract WakuRlnV2Test is Test {
         assertEq(fetchedRateCommitment, rateCommitment);
     }
 
-    function test__IdCommitmentToMetadata__DoesntExist() external {
+    function test__IdCommitmentToMetadata__DoesntExist() external view {
         uint256 idCommitment = 2;
         (uint32 userMessageLimit, uint32 index, uint256 rateCommitment) = w.idCommitmentToMetadata(idCommitment);
         assertEq(userMessageLimit, 0);
@@ -137,7 +134,18 @@ contract WakuRlnV2Test is Test {
     function test__InvalidRegistration__FullTree() external {
         uint32 userMessageLimit = 2;
         // we progress the tree to the last leaf
-        stdstore.target(address(w)).sig("idCommitmentIndex()").checked_write(1 << w.DEPTH());
+        /*| Name                | Type                                                | Slot | Offset | Bytes |
+          |---------------------|-----------------------------------------------------|------|--------|-------|
+          | MAX_MESSAGE_LIMIT   | uint32                                              | 0    | 0      | 4     |
+          | SET_SIZE            | uint32                                              | 0    | 4      | 4     |
+          | idCommitmentIndex   | uint32                                              | 0    | 8      | 4     |
+          | memberInfo          | mapping(uint256 => struct WakuRlnV2.MembershipInfo) | 1    | 0      | 32    |
+          | deployedBlockNumber | uint32                                              | 2    | 0      | 4     |
+          | imtData             | struct LazyIMTData                                  | 3    | 0      | 64    |*/
+        // we set MAX_MESSAGE_LIMIT to 20 (unaltered)
+        // we set SET_SIZE to 4294967295 (1 << 20) (unaltered)
+        // we set idCommitmentIndex to 4294967295 (1 << 20) (altered)
+        vm.store(address(w), bytes32(0), 0x0000000000000000000000000000000000000000ffffffffffffffff00000014);
         vm.expectRevert(FullTree.selector);
         w.register(1, userMessageLimit);
     }
@@ -178,5 +186,19 @@ contract WakuRlnV2Test is Test {
             uint256 rateCommitment = PoseidonT3.hash([i + 1, userMessageLimit]);
             assertEq(commitments[i], rateCommitment);
         }
+    }
+
+    function test__Upgrade() external {
+        address newImplementation = address(new WakuRlnV2());
+        bytes memory data;
+        UUPSUpgradeable(address(w)).upgradeToAndCall(newImplementation, data);
+        // ensure that the implementation is set correctly
+        // ref:
+        // solhint-disable-next-line
+        // https://github.com/OpenZeppelin/openzeppelin-foundry-upgrades/blob/4cd15fc50b141c77d8cc9ff8efb44d00e841a299/src/internal/Core.sol#L289
+        address fetchedImpl = address(
+            uint160(uint256(vm.load(address(w), 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc)))
+        );
+        assertEq(fetchedImpl, newImplementation);
     }
 }
