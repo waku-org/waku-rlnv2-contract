@@ -27,7 +27,7 @@ contract WakuRlnV2Test is Test {
         vm.resumeGasMetering();
         w.register(idCommitment, userMessageLimit);
         vm.pauseGasMetering();
-        assertEq(w.idCommitmentIndex(), 1);
+        assertEq(w.commitmentIndex(), 1);
         assertEq(w.memberExists(idCommitment), true);
         (uint32 fetchedUserMessageLimit, uint32 index) = w.memberInfo(idCommitment);
         assertEq(fetchedUserMessageLimit, userMessageLimit);
@@ -138,13 +138,13 @@ contract WakuRlnV2Test is Test {
           |---------------------|-----------------------------------------------------|------|--------|-------|
           | MAX_MESSAGE_LIMIT   | uint32                                              | 0    | 0      | 4     |
           | SET_SIZE            | uint32                                              | 0    | 4      | 4     |
-          | idCommitmentIndex   | uint32                                              | 0    | 8      | 4     |
+          | commitmentIndex   | uint32                                              | 0    | 8      | 4     |
           | memberInfo          | mapping(uint256 => struct WakuRlnV2.MembershipInfo) | 1    | 0      | 32    |
           | deployedBlockNumber | uint32                                              | 2    | 0      | 4     |
           | imtData             | struct LazyIMTData                                  | 3    | 0      | 64    |*/
         // we set MAX_MESSAGE_LIMIT to 20 (unaltered)
         // we set SET_SIZE to 4294967295 (1 << 20) (unaltered)
-        // we set idCommitmentIndex to 4294967295 (1 << 20) (altered)
+        // we set commitmentIndex to 4294967295 (1 << 20) (altered)
         vm.store(address(w), bytes32(0), 0x0000000000000000000000000000000000000000ffffffffffffffff00000014);
         vm.expectRevert(FullTree.selector);
         w.register(1, userMessageLimit);
@@ -155,7 +155,7 @@ contract WakuRlnV2Test is Test {
         w.getCommitments(1, 0);
     }
 
-    function test__InvalidPaginationQuery__EndIndexGTIdCommitmentIndex() external {
+    function test__InvalidPaginationQuery__EndIndexGTcommitmentIndex() external {
         vm.expectRevert(abi.encodeWithSelector(InvalidPaginationQuery.selector, 0, 2));
         w.getCommitments(0, 2);
     }

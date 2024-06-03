@@ -38,7 +38,7 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     uint32 public SET_SIZE;
 
     /// @notice The index of the next member to be registered
-    uint32 public idCommitmentIndex;
+    uint32 public commitmentIndex;
 
     /// @notice the membership metadata of the member
     struct MembershipInfo {
@@ -58,10 +58,9 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     LazyIMTData public imtData;
 
     /// Emitted when a new member is added to the set
-    /// @param idCommitment The idCommitment of the member
-    /// @param userMessageLimit the user message limit of the member
+    /// @param rateCommitment the rateCommitment of the member
     /// @param index The index of the member in the set
-    event MemberRegistered(uint256 idCommitment, uint32 userMessageLimit, uint32 index);
+    event MemberRegistered(uint256 rateCommitment, uint32 index);
 
     /// @notice the modifier to check if the idCommitment is valid
     /// @param idCommitment The idCommitment of the member
@@ -88,7 +87,7 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         SET_SIZE = uint32(1 << DEPTH);
         deployedBlockNumber = uint32(block.number);
         LazyIMT.init(imtData, DEPTH);
-        idCommitmentIndex = 0;
+        commitmentIndex = 0;
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner { } // solhint-disable-line
@@ -153,15 +152,15 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @param userMessageLimit The message limit of the member
     function _register(uint256 idCommitment, uint32 userMessageLimit) internal {
         if (memberExists(idCommitment)) revert DuplicateIdCommitment();
-        if (idCommitmentIndex >= SET_SIZE) revert FullTree();
+        if (commitmentIndex >= SET_SIZE) revert FullTree();
 
         uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
-        MembershipInfo memory member = MembershipInfo({ userMessageLimit: userMessageLimit, index: idCommitmentIndex });
+        MembershipInfo memory member = MembershipInfo({ userMessageLimit: userMessageLimit, index: commitmentIndex });
         LazyIMT.insert(imtData, rateCommitment);
         memberInfo[idCommitment] = member;
 
-        emit MemberRegistered(idCommitment, userMessageLimit, idCommitmentIndex);
-        idCommitmentIndex += 1;
+        emit MemberRegistered(rateCommitment, commitmentIndex);
+        commitmentIndex += 1;
     }
 
     /// @notice Returns the commitments of a range of members
@@ -170,7 +169,7 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @return The commitments of the members
     function getCommitments(uint32 startIndex, uint32 endIndex) public view returns (uint256[] memory) {
         if (startIndex > endIndex) revert InvalidPaginationQuery(startIndex, endIndex);
-        if (endIndex > idCommitmentIndex) revert InvalidPaginationQuery(startIndex, endIndex);
+        if (endIndex > commitmentIndex) revert InvalidPaginationQuery(startIndex, endIndex);
 
         uint256[] memory commitments = new uint256[](endIndex - startIndex + 1);
         for (uint32 i = startIndex; i <= endIndex; i++) {
