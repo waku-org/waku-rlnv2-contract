@@ -49,3 +49,4 @@ libraries = ["node_modules/@zk-kit/imt.sol/contracts/LazyIMT.sol:LazyIMT:0x22317
 
 [profile.cardona]
 libraries = ["node_modules/@zk-kit/imt.sol/contracts/LazyIMT.sol:LazyIMT:0x8176F5f2A49cDBcCB46487D9C839c45D0200A270", "node_modules/poseidon-solidity/PoseidonT3.sol:PoseidonT3:0x99419DF6428Bad6Fe117513129FACaD4864afdcF"]
+evm_version = "shanghai"
