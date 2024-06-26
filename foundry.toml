@@ -28,6 +28,7 @@ max_test_rejects = 128_000
   mainnet = { key = "${API_KEY_ETHERSCAN}" }
   sepolia = { key = "${API_KEY_ETHERSCAN}" }
   2442 = { key = "${API_KEY_CARDONA}", url = "https://api-cardona-zkevm.polygonscan.com/api" }
+  59141 = { key = "${API_KEY_LINEASCAN}", url = "https://api-sepolia.lineascan.build/api" }
 
 [fmt]
   bracket_spacing = true
@@ -43,6 +44,7 @@ max_test_rejects = 128_000
   localhost = "http://localhost:8545"
   sepolia = "https://eth-sepolia.g.alchemy.com/v2/${API_KEY_ALCHEMY}"
   2442 = "https://rpc.cardona.zkevm-rpc.com"
+  59141 = "https://rpc.sepolia.linea.build"
 
 [profile.sepolia]
 libraries = ["node_modules/@zk-kit/imt.sol/contracts/LazyIMT.sol:LazyIMT:0x22317F732AE9f9015b0866d03319a441FB42cd7f", "node_modules/poseidon-solidity/PoseidonT3.sol:PoseidonT3:0x4CF6285AC1E3ddAD6E1E378146CbCd3A6CA3Ed60"]
@@ -50,3 +52,7 @@ libraries = ["node_modules/@zk-kit/imt.sol/contracts/LazyIMT.sol:LazyIMT:0x22317
 [profile.cardona]
 libraries = ["node_modules/@zk-kit/imt.sol/contracts/LazyIMT.sol:LazyIMT:0x8176F5f2A49cDBcCB46487D9C839c45D0200A270", "node_modules/poseidon-solidity/PoseidonT3.sol:PoseidonT3:0x99419DF6428Bad6Fe117513129FACaD4864afdcF"]
 evm_version = "shanghai"
+
+[profile.linea_sepolia]
+evm_version = "london"
+libraries = ["node_modules/@zk-kit/imt.sol/contracts/LazyIMT.sol:LazyIMT:0xDFD4FC1c81Bd499d814fF876e34637bE58F85b90", "node_modules/poseidon-solidity/PoseidonT3.sol:PoseidonT3:0xe893c04DfB939CFC2FBC024Dae1B17623a487e0A"]
