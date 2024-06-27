@@ -12,7 +12,7 @@
     "commit-and-tag-version": "^12.2.0"
   },
   "dependencies": {
-    "@zk-kit/imt.sol": "https://gitpkg.now.sh/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500",
+    "@zk-kit/imt.sol": "https://gitpkg.vercel.app/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500",
     "poseidon-solidity": "^0.0.5"
   },
   "keywords": [
@@ -35,8 +35,8 @@
     "release": "commit-and-tag-version",
     "adorno": "pnpm prettier:write && forge fmt && forge snapshot && pnpm gas-report",
     "deploy:sepolia": "./envCheck.sh && FOUNDRY_PROFILE=sepolia forge script --chain sepolia script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
-    "deploy:cardona": "./envCheck.sh && FOUNDRY_PROFILE=cardona forge script --chain 2442 script/Deploy.s.sol:Deploy --rpc-url https://rpc.cardona.zkevm-rpc.com --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
-    "deploy:linea_sepolia": "./envCheck.sh && FOUNDRY_PROFILE=linea_sepolia forge script --chain 59141  script/Deploy.s.sol:Deploy --rpc-url https://rpc.sepolia.linea.build  --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
+    "deploy:cardona": "export RPC_URL=https://rpc.cardona.zkevm-rpc.com && ./envCheck.sh && FOUNDRY_PROFILE=cardona forge script --chain 2442 script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
+    "deploy:linea_sepolia": "export RPC_URL=https://rpc.sepolia.linea.build && ./envCheck.sh && FOUNDRY_PROFILE=linea_sepolia forge script --chain 59141  script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
     "deploy:localhost": "./envCheck.sh && forge script script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast -vv --account $ACCOUNT --sender $ETH_FROM"
   }
 }

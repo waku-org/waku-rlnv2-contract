@@ -6,8 +6,8 @@ settings:
 
 dependencies:
   '@zk-kit/imt.sol':
-    specifier: https://gitpkg.now.sh/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500
-    version: '@gitpkg.now.sh/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500'
+    specifier: https://gitpkg.vercel.app/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500
+    version: '@gitpkg.vercel.app/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500'
   poseidon-solidity:
     specifier: ^0.0.5
     version: 0.0.5
@@ -1905,8 +1905,8 @@ packages:
     engines: {node: '>=10'}
     dev: true
 
-  '@gitpkg.now.sh/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500':
-    resolution: {tarball: https://gitpkg.now.sh/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500}
+  '@gitpkg.vercel.app/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500':
+    resolution: {tarball: https://gitpkg.vercel.app/privacy-scaling-explorations/zk-kit/packages/imt.sol?0699fd1e5ad3683ae0090e0626f75d7834145500}
     name: imt.sol
     version: 0.0.0
     dependencies:

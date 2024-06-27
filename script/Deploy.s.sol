@@ -13,7 +13,7 @@ import { DeploymentConfig } from "./DeploymentConfig.s.sol";
 contract Deploy is BaseScript {
     function run() public broadcast returns (WakuRlnV2 w, address impl) {
         impl = address(new WakuRlnV2());
-        bytes memory data = abi.encodeCall(WakuRlnV2.initialize, 20);
+        bytes memory data = abi.encodeCall(WakuRlnV2.initialize, 100);
         address proxy = address(new ERC1967Proxy(impl, data));
         w = WakuRlnV2(proxy);
     }
