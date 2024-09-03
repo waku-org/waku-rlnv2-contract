@@ -8,6 +8,9 @@ import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/O
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
+import { Membership } from "./Membership.sol";
+import { IPriceCalculator } from "./IPriceCalculator.sol";
+
 /// The tree is full
 error FullTree();
 
@@ -23,33 +26,16 @@ error InvalidUserMessageLimit(uint32 messageLimit);
 /// Invalid pagination query
 error InvalidPaginationQuery(uint256 startIndex, uint256 endIndex);
 
-contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
+contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Membership {
     /// @notice The Field
     uint256 public constant Q =
         21_888_242_871_839_275_222_246_405_745_257_275_088_548_364_400_416_034_343_698_204_186_575_808_495_617;
-
-    /// @notice The max message limit per epoch
-    uint32 public MAX_MESSAGE_LIMIT;
 
     /// @notice The depth of the merkle tree
     uint8 public constant DEPTH = 20;
 
     /// @notice The size of the merkle tree, i.e 2^depth
     uint32 public SET_SIZE;
-
-    /// @notice The index of the next member to be registered
-    uint32 public commitmentIndex;
-
-    /// @notice the membership metadata of the member
-    struct MembershipInfo {
-        /// @notice the user message limit of each member
-        uint32 userMessageLimit;
-        /// @notice the index of the member in the set
-        uint32 index;
-    }
-
-    /// @notice the member metadata
-    mapping(uint256 => MembershipInfo) public memberInfo;
 
     /// @notice the deployed block number
     uint32 public deployedBlockNumber;
@@ -69,21 +55,39 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         _;
     }
 
-    /// @notice the modifier to check if the userMessageLimit is valid
-    /// @param userMessageLimit The user message limit
-    modifier onlyValidUserMessageLimit(uint32 userMessageLimit) {
-        if (!isValidUserMessageLimit(userMessageLimit)) revert InvalidUserMessageLimit(userMessageLimit);
-        _;
-    }
-
     constructor() {
         _disableInitializers();
     }
 
-    function initialize(uint32 maxMessageLimit) public initializer {
+    /// @dev contract initializer
+    /// @param _priceCalculator Address of an instance of IPriceCalculator
+    /// @param _maxTotalRateLimitPerEpoch Maximum total rate limit of all memberships in the tree
+    /// @param _minRateLimitPerMembership Minimum rate limit of one membership
+    /// @param _maxRateLimitPerMembership Maximum rate limit of one membership
+    /// @param _billingPeriod Membership billing period
+    /// @param _gracePeriod Membership grace period
+    function initialize(
+        address _priceCalculator,
+        uint32 _maxTotalRateLimitPerEpoch,
+        uint16 _minRateLimitPerMembership,
+        uint16 _maxRateLimitPerMembership,
+        uint32 _billingPeriod,
+        uint32 _gracePeriod
+    )
+        public
+        initializer
+    {
         __Ownable_init();
         __UUPSUpgradeable_init();
-        MAX_MESSAGE_LIMIT = maxMessageLimit;
+        __Membership_init(
+            _priceCalculator,
+            _maxTotalRateLimitPerEpoch,
+            _minRateLimitPerMembership,
+            _maxRateLimitPerMembership,
+            _billingPeriod,
+            _gracePeriod
+        );
+
         SET_SIZE = uint32(1 << DEPTH);
         deployedBlockNumber = uint32(block.number);
         LazyIMT.init(imtData, DEPTH);
@@ -99,13 +103,6 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         return idCommitment != 0 && idCommitment < Q;
     }
 
-    /// @notice Checks if a user message limit is valid
-    /// @param userMessageLimit The user message limit
-    /// @return true if the user message limit is valid, false otherwise
-    function isValidUserMessageLimit(uint32 userMessageLimit) public view returns (bool) {
-        return userMessageLimit > 0 && userMessageLimit <= MAX_MESSAGE_LIMIT;
-    }
-
     /// @notice Returns the rateCommitment of a member
     /// @param index The index of the member
     /// @return The rateCommitment of the member
@@ -117,9 +114,9 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @param idCommitment The idCommitment of the member
     /// @return The metadata of the member (userMessageLimit, index, rateCommitment)
     function idCommitmentToMetadata(uint256 idCommitment) public view returns (uint32, uint32, uint256) {
-        MembershipInfo memory member = memberInfo[idCommitment];
-        // we cannot call indexToCommitment for 0 index if the member doesn't exist
-        if (member.userMessageLimit == 0) {
+        MembershipInfo memory member = members[idCommitment];
+        // we cannot call indexToCommitment if the member doesn't exist
+        if (member.holder == address(0)) {
             return (0, 0, 0);
         }
         return (member.userMessageLimit, member.index, indexToCommitment(member.index));
@@ -133,34 +130,46 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
         return rateCommitment != 0;
     }
 
-    /// Allows a user to register as a member
+    /// @notice Allows a user to register as a member
     /// @param idCommitment The idCommitment of the member
     /// @param userMessageLimit The message limit of the member
+    /// @param numberOfPeriods The number of periods to acquire
     function register(
         uint256 idCommitment,
-        uint32 userMessageLimit
+        uint32 userMessageLimit,
+        uint32 numberOfPeriods // TODO: is there a maximum number of periods allowed?
     )
         external
+        payable
         onlyValidIdCommitment(idCommitment)
-        onlyValidUserMessageLimit(userMessageLimit)
     {
-        _register(idCommitment, userMessageLimit);
+        if (memberExists(idCommitment)) revert DuplicateIdCommitment();
+
+        uint32 index;
+        bool reusedIndex;
+        (index, reusedIndex) = _acquireMembership(_msgSender(), idCommitment, userMessageLimit, numberOfPeriods);
+
+        _register(idCommitment, userMessageLimit, index, reusedIndex);
     }
 
-    /// Registers a member
+    /// @dev Registers a member
     /// @param idCommitment The idCommitment of the member
     /// @param userMessageLimit The message limit of the member
-    function _register(uint256 idCommitment, uint32 userMessageLimit) internal {
-        if (memberExists(idCommitment)) revert DuplicateIdCommitment();
+    /// @param index Indicates the index in the merkle tree
+    /// @param reusedIndex indicates whether we're inserting a new element in the merkle tree or updating a existing
+    /// leaf
+    function _register(uint256 idCommitment, uint32 userMessageLimit, uint32 index, bool reusedIndex) internal {
         if (commitmentIndex >= SET_SIZE) revert FullTree();
 
         uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
-        MembershipInfo memory member = MembershipInfo({ userMessageLimit: userMessageLimit, index: commitmentIndex });
-        LazyIMT.insert(imtData, rateCommitment);
-        memberInfo[idCommitment] = member;
+        if (reusedIndex) {
+            LazyIMT.update(imtData, rateCommitment, index);
+        } else {
+            LazyIMT.insert(imtData, rateCommitment);
+            commitmentIndex += 1;
+        }
 
-        emit MemberRegistered(rateCommitment, commitmentIndex);
-        commitmentIndex += 1;
+        emit MemberRegistered(rateCommitment, index);
     }
 
     /// @notice Returns the commitments of a range of members
@@ -194,5 +203,71 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable {
             castedProof[i] = proof[i];
         }
         return castedProof;
+    }
+
+    /// @notice Extend a membership expiration date. Memberships must be on grace period
+    /// @param idCommitments list of idcommitments
+    function extend(uint256[] calldata idCommitments) external {
+        for (uint256 i = 0; i < idCommitments.length; i++) {
+            uint256 idCommitment = idCommitments[i];
+            _extendMembership(_msgSender(), idCommitment);
+        }
+    }
+
+    /// @notice Remove expired memberships or owned memberships in grace period.
+    /// The user can determine offchain which expired memberships slots
+    /// are available, and proceed to free them.
+    /// This is also used to erase memberships in grace period if they're
+    /// held by the sender. The sender can then withdraw the tokens.
+    /// @param idCommitments list of idcommitments of the memberships
+    function eraseMemberships(uint256[] calldata idCommitments) external {
+        for (uint256 i = 0; i < idCommitments.length; i++) {
+            uint256 idCommitment = idCommitments[i];
+            MembershipInfo memory mdetails = members[idCommitment];
+            _eraseMembership(_msgSender(), idCommitment, mdetails);
+            LazyIMT.update(imtData, 0, mdetails.index);
+        }
+    }
+
+    /// @notice Withdraw any available balance in tokens after a membership is erased.
+    /// @param token The address of the token to withdraw. Use 0x000...000 to withdraw ETH
+    function withdraw(address token) external {
+        _withdraw(_msgSender(), token);
+    }
+
+    /// @notice Set the address of the price calculator
+    /// @param _priceCalculator new price calculator address
+    function setPriceCalculator(address _priceCalculator) external onlyOwner {
+        priceCalculator = IPriceCalculator(_priceCalculator);
+    }
+
+    /// @notice Set the maximum total rate limit of all memberships in the tree
+    /// @param _maxTotalRateLimitPerEpoch new value
+    function setMaxTotalRateLimitPerEpoch(uint32 _maxTotalRateLimitPerEpoch) external onlyOwner {
+        maxTotalRateLimitPerEpoch = _maxTotalRateLimitPerEpoch;
+    }
+
+    /// @notice Set the maximum rate limit of one membership
+    /// @param _maxRateLimitPerMembership  new value
+    function setMaxRateLimitPerMembership(uint32 _maxRateLimitPerMembership) external onlyOwner {
+        maxRateLimitPerMembership = _maxRateLimitPerMembership;
+    }
+
+    /// @notice Set the minimum rate limit of one membership
+    /// @param _minRateLimitPerMembership  new value
+    function setMinRateLimitPerMembership(uint32 _minRateLimitPerMembership) external onlyOwner {
+        minRateLimitPerMembership = _minRateLimitPerMembership;
+    }
+
+    /// @notice Set the membership billing period
+    /// @param _billingPeriod  new value
+    function setBillingPeriod(uint32 _billingPeriod) external onlyOwner {
+        billingPeriod = _billingPeriod;
+    }
+
+    /// @notice Set the membership grace period
+    /// @param _gracePeriod  new value
+    function setGracePeriod(uint32 _gracePeriod) external onlyOwner {
+        gracePeriod = _gracePeriod;
     }
 }
