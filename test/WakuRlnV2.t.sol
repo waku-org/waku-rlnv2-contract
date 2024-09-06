@@ -567,9 +567,42 @@ contract WakuRlnV2Test is Test {
     function test__RegistrationWhenMaxRateLimitIsReachedAndMultipleExpiredMembersAvailableButTheyDontHaveEnoughRateLimit(
     )
         external
-    { }
+    {
+        vm.pauseGasMetering();
+        vm.startPrank(w.owner());
+        w.setMinRateLimitPerMembership(1);
+        w.setMaxRateLimitPerMembership(5);
+        w.setMaxTotalRateLimitPerEpoch(5);
+        vm.stopPrank();
+        vm.resumeGasMetering();
 
-    function test__indexReuse() external { }
+        (, uint256 priceA) = w.priceCalculator().calculate(1, 10);
+        w.register{ value: priceA }(1, 1, 10);
+        vm.warp(block.timestamp + 100);
+        w.register{ value: priceA }(2, 1, 10);
+        vm.warp(block.timestamp + 100);
+        uint256 expirationDate = w.expirationDate(2);
+        vm.warp(expirationDate);
+        w.register{ value: priceA }(3, 1, 10);
+
+        // Make sure only the first 2 memberships are expired
+        assertTrue(w.isExpired(1));
+        assertTrue(w.isExpired(2));
+        assertFalse(w.isExpired(3) || w.isGracePeriod(3));
+
+        // Attempt to register a membership that will require to expire 2 memberships
+        // Currently there is 2 available, and we want to register 5
+        // If we remove first membership, we'll have 3 available
+        // If we also remove the second, we'll have 4 available, but it is still not enough
+        // for registering
+        (, uint256 priceB) = w.priceCalculator().calculate(5, 10);
+        vm.expectRevert(abi.encodeWithSelector(ExceedAvailableMaxRateLimitPerEpoch.selector));
+        w.register{ value: priceB }(4, 5, 10);
+    }
+
+    function test__indexReuse() external {
+        // TODO: implement
+    }
 
     function test__RemoveExpiredMemberships(uint32 userMessageLimit, uint32 numberOfPeriods) external {
         vm.pauseGasMetering();
