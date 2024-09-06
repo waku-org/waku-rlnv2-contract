@@ -2,9 +2,8 @@
 pragma solidity 0.8.24;
 
 import { IPriceCalculator } from "./IPriceCalculator.sol";
-import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
-import "openzeppelin-contracts/contracts/utils/Context.sol";
+import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
 // The number of periods should be greater than zero
 error NumberOfPeriodsCantBeZero();
@@ -53,13 +52,13 @@ contract Membership {
     uint32 public gracePeriod;
 
     /// @notice balances available to withdraw
-    mapping(address => mapping(address => uint256)) public balancesToWithdraw; // holder ->  token -> balance
+    mapping(address holder => mapping(address token => uint256 balance)) public balancesToWithdraw;
 
     /// @notice Total rate limit of all memberships in the tree
     uint256 public totalRateLimitPerEpoch;
 
-    /// @notice List of registered memberships (IDCommitment to membership metadata)
-    mapping(uint256 => MembershipInfo) public members;
+    /// @notice List of registered memberships
+    mapping(uint256 idCommitment => MembershipInfo member) public members;
 
     /// @notice The index of the next member to be registered
     uint32 public commitmentIndex;
@@ -219,30 +218,28 @@ contract Membership {
                 // by looking at the oldest membership. If it's expired, we can free it
                 MembershipInfo memory oldestMembership = members[_head];
                 if (
-                    _isExpired(
+                    !_isExpired(
                         oldestMembership.gracePeriodStartDate,
                         oldestMembership.gracePeriod,
                         oldestMembership.numberOfPeriods
                     )
-                ) {
-                    emit MemberExpired(_head, oldestMembership.userMessageLimit, oldestMembership.index);
+                ) revert ExceedAvailableMaxRateLimitPerEpoch();
 
-                    // Deduct the expired membership rate limit
-                    _totalRateLimitPerEpoch -= oldestMembership.userMessageLimit;
+                emit MemberExpired(_head, oldestMembership.userMessageLimit, oldestMembership.index);
 
-                    // Remove the element from the list
-                    delete members[_head];
+                // Deduct the expired membership rate limit
+                _totalRateLimitPerEpoch -= oldestMembership.userMessageLimit;
 
-                    // Promote the next oldest membership to oldest
-                    _head = oldestMembership.next;
+                // Remove the element from the list
+                delete members[_head];
 
-                    // Move balance from expired membership to holder balance
-                    balancesToWithdraw[oldestMembership.holder][oldestMembership.token] += oldestMembership.amount;
+                // Promote the next oldest membership to oldest
+                _head = oldestMembership.next;
 
-                    availableExpiredIndices.push(oldestMembership.index);
-                } else {
-                    revert ExceedAvailableMaxRateLimitPerEpoch();
-                }
+                // Move balance from expired membership to holder balance
+                balancesToWithdraw[oldestMembership.holder][oldestMembership.token] += oldestMembership.amount;
+
+                availableExpiredIndices.push(oldestMembership.index);
             }
 
             // Ensure new head and tail are pointing to the correct memberships
@@ -264,14 +261,7 @@ contract Membership {
         _totalRateLimitPerEpoch += _rateLimit;
 
         // Reuse available slots from previously removed expired memberships
-        uint256 arrLen = availableExpiredIndices.length;
-        if (arrLen != 0) {
-            index = availableExpiredIndices[arrLen - 1];
-            availableExpiredIndices.pop();
-            reusedIndex = true;
-        } else {
-            index = commitmentIndex;
-        }
+        (index, reusedIndex) = _nextIndex();
 
         totalRateLimitPerEpoch = _totalRateLimitPerEpoch;
         members[_idCommitment] = MembershipInfo({
@@ -290,6 +280,21 @@ contract Membership {
         tail = _idCommitment;
     }
 
+    /// @dev reuse available slots from previously removed expired memberships
+    /// @return index index to use
+    /// @return reusedIndex indicates whether it is reusing an existing index, or using a new one
+    function _nextIndex() internal returns (uint32 index, bool reusedIndex) {
+        // Reuse available slots from previously removed expired memberships
+        uint256 arrLen = availableExpiredIndices.length;
+        if (arrLen != 0) {
+            index = availableExpiredIndices[arrLen - 1];
+            availableExpiredIndices.pop();
+            reusedIndex = true;
+        } else {
+            index = commitmentIndex;
+        }
+    }
+
     /// @dev Extend a membership expiration date. Membership must be on grace period
     /// @param _sender the address of the holder of the membership
     /// @param _idCommitment the idCommitment of the membership
@@ -303,7 +308,7 @@ contract Membership {
 
         if (_sender != mdetails.holder) revert NotHolder(_idCommitment);
 
-        uint256 newGracePeriodStartDate = block.timestamp + (uint256(billingPeriod) * uint256(mdetails.numberOfPeriods));
+        uint256 gracePeriodStartDate = block.timestamp + (uint256(billingPeriod) * uint256(mdetails.numberOfPeriods));
 
         uint256 next = mdetails.next;
         uint256 prev = mdetails.prev;
@@ -326,7 +331,7 @@ contract Membership {
         // Move membership to the end (since it will be the newest)
         mdetails.next = 0;
         mdetails.prev = _tail;
-        mdetails.gracePeriodStartDate = newGracePeriodStartDate;
+        mdetails.gracePeriodStartDate = gracePeriodStartDate;
         mdetails.gracePeriod = gracePeriod;
 
         // Link previous tail with membership that was just extended
@@ -341,7 +346,7 @@ contract Membership {
         head = _head;
         tail = _idCommitment;
 
-        emit MemberExtended(_idCommitment, mdetails.userMessageLimit, mdetails.index, newGracePeriodStartDate);
+        emit MemberExtended(_idCommitment, mdetails.userMessageLimit, mdetails.index, gracePeriodStartDate);
     }
 
     /// @dev Determine whether a timestamp is considered to be expired or not after exceeding the grace period

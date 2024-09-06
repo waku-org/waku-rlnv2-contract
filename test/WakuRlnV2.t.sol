@@ -6,8 +6,9 @@ import { Deploy } from "../script/Deploy.s.sol";
 import { DeploymentConfig } from "../script/DeploymentConfig.s.sol";
 import "../src/WakuRlnV2.sol"; // solhint-disable-line
 import "../src/Membership.sol"; // solhint-disable-line
-import "../src/LinearPriceCalculator.sol"; // solhint-disable-line
-import "./TestToken.sol";
+import { IPriceCalculator } from "../src/IPriceCalculator.sol";
+import { LinearPriceCalculator } from "../src/LinearPriceCalculator.sol";
+import { TestToken } from "./TestToken.sol";
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -564,8 +565,7 @@ contract WakuRlnV2Test is Test {
         assertEq(availableBalance, priceA * 2);
     }
 
-    function test__RegistrationWhenMaxRateLimitIsReachedAndMultipleExpiredMembersAvailableButTheyDontHaveEnoughRateLimit(
-    )
+    function test__RegistrationWhenMaxRateLimitReachedAndMultipleExpiredMembersAvailableWithoutEnoughRateLimit()
         external
     {
         vm.pauseGasMetering();
@@ -920,5 +920,5 @@ contract WakuRlnV2Test is Test {
         assertEq(fetchedImpl, newImpl);
     }
 
-    receive() external payable { }
+    receive() external payable { } // solhint-disable-line
 }
