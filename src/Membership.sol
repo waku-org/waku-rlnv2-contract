@@ -228,13 +228,7 @@ contract Membership {
                     delete members[head];
 
                     // Promote the next oldest membership to oldest
-                    uint256 nextOldest = oldestMembership.next;
-                    head = nextOldest;
-                    if (nextOldest != 0) {
-                        members[nextOldest].prev = 0;
-                    } else {
-                        tail = 0;
-                    }
+                    head = oldestMembership.next;
 
                     // Move balance from expired membership to holder balance
                     balancesToWithdraw[oldestMembership.holder][oldestMembership.token] += oldestMembership.amount;
@@ -243,6 +237,13 @@ contract Membership {
                 } else {
                     revert ExceedAvailableMaxRateLimitPerEpoch();
                 }
+            }
+
+            // Ensure new head and tail are pointing to the correct memberships
+            if (head != 0) {
+                members[head].prev = 0;
+            } else {
+                tail = 0;
             }
         }
 

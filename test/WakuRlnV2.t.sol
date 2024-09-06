@@ -465,16 +465,46 @@ contract WakuRlnV2Test is Test {
     }
 
     function test__RegistrationWhenMaxRateLimitIsReachedAndMultipleExpiredMembersAvailable() external {
-        // TODO: implement
-        // TODO: validate elements are chained correctly
+        vm.pauseGasMetering();
+        vm.startPrank(w.owner());
+        w.setMinRateLimitPerMembership(1);
+        w.setMaxRateLimitPerMembership(5);
+        w.setMaxTotalRateLimitPerEpoch(5);
+        vm.stopPrank();
+        vm.resumeGasMetering();
+
+        (, uint256 price) = w.priceCalculator().calculate(1, 10);
+        w.register{ value: price }(1, 1, 10);
+        vm.warp(block.timestamp + 100);
+        w.register{ value: price }(2, 1, 10);
+        vm.warp(block.timestamp + 100);
+        uint256 expirationDate = w.expirationDate(2);
+        vm.warp(expirationDate);
+        w.register{ value: price }(3, 1, 10);
+
+        // Make sure only the first 2 memberships are expired
+        assertTrue(w.isExpired(1));
+        assertTrue(w.isExpired(2));
+        assertFalse(w.isExpired(3) || w.isGracePeriod(3));
+
+        // Attempt to register a membership that will require to expire 2 memberships
+        // Currently there is 2 available, and we want to register 4
+        // If we remove first membership, we'll have 3 available
+        // If we also remove the second, we'll have 4 available
+        vm.expectEmit(true, false, false, false);
+       emit Membership.MemberExpired(1, 0, 0);
+        vm.expectEmit(true, false, false, false);
+        emit Membership.MemberExpired(2, 0, 0);
+        (, price) = w.priceCalculator().calculate(4, 10);
+        w.register{ value: price }(4, 4, 10);
+
         // TODO: validate reuse of index
         // TODO: validate balance
-
-        // TODO: check that the expired memberships are gone
+        // TODO: check that the expired memberships are gone and membership 3 is still there
         // TODO: check the usermessage limits (total)
         // TODO: check that it reused the index of the one gone
         // TODO: check head and tail are correct and next and prev
-        // TODO: validate that expired event is emitted
+        // TODO: there should be at least a single index available
         // TODO: validate balance
     }
 
