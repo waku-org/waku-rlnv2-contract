@@ -601,7 +601,7 @@ contract WakuRlnV2Test is Test {
     }
 
     function test__indexReuse() external {
-        // TODO: implement
+        revert("TODO: implement");
     }
 
     function test__RemoveExpiredMemberships(uint32 userMessageLimit, uint32 numberOfPeriods) external {
@@ -822,32 +822,39 @@ contract WakuRlnV2Test is Test {
         w.register{ value: price }(idCommitment, userMessageLimit, numberOfPeriods);
     }
 
-    // TODO: state has changed due to adding new variables. Update this
-    /*
     function test__InvalidRegistration__FullTree() external {
         vm.pauseGasMetering();
-        uint32 userMessageLimit = 2;
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        uint32 userMessageLimit = 20;
+        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit, 1);
         vm.resumeGasMetering();
 
         // we progress the tree to the last leaf
+
         /*| Name                | Type                                                | Slot | Offset | Bytes |
           |---------------------|-----------------------------------------------------|------|--------|-------|
-          | MAX_MESSAGE_LIMIT   | uint32                                              | 0    | 0      | 4     |
-          | SET_SIZE            | uint32                                              | 0    | 4      | 4     |
-          | commitmentIndex   | uint32                                              | 0    | 8      | 4     |
-          | memberInfo          | mapping(uint256 => struct WakuRlnV2.MembershipInfo) | 1    | 0      | 32    |
-          | deployedBlockNumber | uint32                                              | 2    | 0      | 4     |
-          | imtData             | struct LazyIMTData                                  | 3    | 0      | 64    |*/
-    // we set MAX_MESSAGE_LIMIT to 20 (unaltered)
-    // we set SET_SIZE to 4294967295 (1 << 20) (unaltered)
-    // we set commitmentIndex to 4294967295 (1 << 20) (altered)
-    /*        vm.store(address(w), bytes32(uint256(201)),
-    0x0000000000000000000000000000000000000000ffffffffffffffff00000014);
+          | commitmentIndex     | uint32                                              | 206  | 0      | 4     | */
+
+        /*
+        Pro tip: to easily find the storage slot of a variable, without having to calculate the storage layout
+        based on the variable declaration, set the variable to an easily grepable value like 0xDEADBEEF, and then
+        execute:
+        ```
+        for (uint256 i = 0; i <= 500; i++) {
+            bytes32 slot0Value = vm.load(address(w), bytes32(i));
+            console.log("%s", i);
+            console.logBytes32(slot0Value);
+        }
+        revert();
+        ```
+        Search the value in the output (i.e. `DEADBEEF`) to determine the storage slot being used.
+        If the storage layout changes, update the next line accordingly
+        */
+
+        // we set commitmentIndex to 4294967295 (1 << 20) = 0x00100000
+        vm.store(address(w), bytes32(uint256(206)), 0x0000000000000000000000000000000000000000000000000000000000100000);
         vm.expectRevert(FullTree.selector);
-        w.register{ value: price }(1, userMessageLimit);
+        w.register{ value: price }(1, userMessageLimit, 1);
     }
-    */
 
     function test__InvalidPaginationQuery__StartIndexGTEndIndex() external {
         vm.expectRevert(abi.encodeWithSelector(InvalidPaginationQuery.selector, 1, 0));
