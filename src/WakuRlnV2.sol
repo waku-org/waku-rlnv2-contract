@@ -77,6 +77,11 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
         public
         initializer
     {
+        require(_maxTotalRateLimitPerEpoch >= maxRateLimitPerMembership);
+        require(_maxRateLimitPerMembership > minRateLimitPerMembership);
+        require(_minRateLimitPerMembership > 0);
+        require(_billingPeriod > 0);
+
         __Ownable_init();
         __UUPSUpgradeable_init();
         __Membership_init(
@@ -244,24 +249,28 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
     /// @notice Set the maximum total rate limit of all memberships in the tree
     /// @param _maxTotalRateLimitPerEpoch new value
     function setMaxTotalRateLimitPerEpoch(uint32 _maxTotalRateLimitPerEpoch) external onlyOwner {
+        require(_maxTotalRateLimitPerEpoch >= maxRateLimitPerMembership);
         maxTotalRateLimitPerEpoch = _maxTotalRateLimitPerEpoch;
     }
 
     /// @notice Set the maximum rate limit of one membership
     /// @param _maxRateLimitPerMembership  new value
     function setMaxRateLimitPerMembership(uint32 _maxRateLimitPerMembership) external onlyOwner {
+        require(_maxRateLimitPerMembership >= minRateLimitPerMembership);
         maxRateLimitPerMembership = _maxRateLimitPerMembership;
     }
 
     /// @notice Set the minimum rate limit of one membership
     /// @param _minRateLimitPerMembership  new value
     function setMinRateLimitPerMembership(uint32 _minRateLimitPerMembership) external onlyOwner {
+        require(_minRateLimitPerMembership > 0);
         minRateLimitPerMembership = _minRateLimitPerMembership;
     }
 
     /// @notice Set the membership billing period
     /// @param _billingPeriod  new value
     function setBillingPeriod(uint32 _billingPeriod) external onlyOwner {
+        require(_billingPeriod > 0);
         billingPeriod = _billingPeriod;
     }
 

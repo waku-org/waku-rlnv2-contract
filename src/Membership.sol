@@ -6,6 +6,8 @@ import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import "openzeppelin-contracts/contracts/utils/Context.sol";
 
+import "forge-std/console.sol";
+
 // The number of periods should be greater than zero
 error NumberOfPeriodsCantBeZero();
 
@@ -20,7 +22,7 @@ error InvalidRateLimit();
 
 // It's not possible to acquire the rate limit due to exceeding the expected limits
 // even after attempting to erase expired memberships
-error ExceedMaxRateLimitPerEpoch();
+error ExceedAvailableMaxRateLimitPerEpoch();
 
 // This membership is not in grace period yet
 error NotInGracePeriod(uint256 idCommitment);
@@ -80,7 +82,7 @@ contract Membership {
         uint256 next;
         /// @notice amount of the token used to acquire this membership
         uint256 amount;
-        /// @notice numPeriods
+        /// @notice numberOfPeriods
         uint32 numberOfPeriods;
         /// @notice timestamp of when the grace period starts for this membership
         uint256 gracePeriodStartDate;
@@ -202,36 +204,44 @@ contract Membership {
             revert InvalidRateLimit();
         }
 
-        // Attempt to free expired membership slots
-        while (totalRateLimitPerEpoch + _rateLimit > maxTotalRateLimitPerEpoch) {
-            // Determine if there are any available spot in the membership map
-            // by looking at the oldest membership. If it's expired, we can free it
-            MembershipInfo memory oldestMembership = members[head];
+        // Determine if we exceed the total rate limit
+        if (totalRateLimitPerEpoch + _rateLimit > maxTotalRateLimitPerEpoch) {
+            if (head == 0) revert ExceedAvailableMaxRateLimitPerEpoch(); // List is empty
 
-            if (
-                oldestMembership.holder != address(0) // membership has a holder
-                    && isExpired(oldestMembership.gracePeriodStartDate)
-            ) {
-                emit MemberExpired(head, oldestMembership.userMessageLimit, oldestMembership.index);
+            // Attempt to free expired membership slots
+            while (totalRateLimitPerEpoch + _rateLimit > maxTotalRateLimitPerEpoch) {
+                // Determine if there are any available spot in the membership map
+                // by looking at the oldest membership. If it's expired, we can free it
+                MembershipInfo memory oldestMembership = members[head];
+                if (
+                    oldestMembership.holder != address(0) // membership has a holder
+                        && _isExpired(
+                            oldestMembership.gracePeriodStartDate,
+                            oldestMembership.gracePeriod,
+                            oldestMembership.numberOfPeriods
+                        )
+                ) {
+                    emit MemberExpired(head, oldestMembership.userMessageLimit, oldestMembership.index);
 
-                // Deduct the expired membership rate limit
-                totalRateLimitPerEpoch -= oldestMembership.userMessageLimit;
+                    // Deduct the expired membership rate limit
+                    totalRateLimitPerEpoch -= oldestMembership.userMessageLimit;
 
-                // Promote the next oldest membership to oldest
-                uint256 nextOldest = oldestMembership.next;
-                head = nextOldest;
-                if (nextOldest != 0) {
-                    members[nextOldest].prev = 0;
+                    // Promote the next oldest membership to oldest
+                    uint256 nextOldest = oldestMembership.next;
+                    head = nextOldest;
+                    if (nextOldest != 0) {
+                        members[nextOldest].prev = 0;
+                    }
+
+                    // Move balance from expired membership to holder balance
+                    balancesToWithdraw[oldestMembership.holder][oldestMembership.token] += oldestMembership.amount;
+
+                    availableExpiredIndices.push(oldestMembership.index);
+
+                    delete members[head];
+                } else {
+                    revert ExceedAvailableMaxRateLimitPerEpoch();
                 }
-
-                // Move balance from expired membership to holder balance
-                balancesToWithdraw[oldestMembership.holder][oldestMembership.token] += oldestMembership.amount;
-
-                availableExpiredIndices.push(oldestMembership.index);
-
-                delete members[head];
-            } else {
-                revert ExceedMaxRateLimitPerEpoch();
             }
         }
 
@@ -242,7 +252,6 @@ contract Membership {
             prev = tail;
         } else {
             // First item
-            // TODO: test adding memberships after the list has been emptied
             head = _idCommitment;
         }
 

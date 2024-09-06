@@ -363,15 +363,51 @@ contract WakuRlnV2Test is Test {
     }
 
     function test__RegistrationWhenMaxRateLimitIsReached() external {
-        // TODO: implement
-        // TODO: validate elements are chained correctly
-        // TODO: validate reuse of index
+        vm.pauseGasMetering();
+        vm.startPrank(w.owner());
+        w.setMinRateLimitPerMembership(1);
+        w.setMaxRateLimitPerMembership(5);
+        w.setMaxTotalRateLimitPerEpoch(5);
+        vm.stopPrank();
+        vm.resumeGasMetering();
+
+        bool isValid = w.isValidUserMessageLimit(6);
+        assertFalse(isValid);
+
+        // Exceeds the max rate limit per user
+        uint32 userMessageLimit = 10;
+        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit, 1);
+        vm.expectRevert(abi.encodeWithSelector(InvalidRateLimit.selector));
+        w.register{ value: price }(1, userMessageLimit, 1);
+
+        // Should register succesfully
+        userMessageLimit = 4;
+        (, price) = w.priceCalculator().calculate(userMessageLimit, 1);
+        w.register{ value: price }(2, userMessageLimit, 1);
+
+        // Exceeds the rate limit
+        userMessageLimit = 2;
+        (, price) = w.priceCalculator().calculate(userMessageLimit, 1);
+        vm.expectRevert(abi.encodeWithSelector(ExceedAvailableMaxRateLimitPerEpoch.selector));
+        w.register{ value: price }(3, userMessageLimit, 1);
+
+        // Should register succesfully
+        userMessageLimit = 1;
+        (, price) = w.priceCalculator().calculate(userMessageLimit, 1);
+        w.register{ value: price }(3, userMessageLimit, 1);
+
+        // We ran out of rate limit again
+        userMessageLimit = 1;
+        (, price) = w.priceCalculator().calculate(userMessageLimit, 1);
+        vm.expectRevert(abi.encodeWithSelector(ExceedAvailableMaxRateLimitPerEpoch.selector));
+        w.register{ value: price }(4, userMessageLimit, 1);
     }
 
     function test__RegistrationWhenMaxRateLimitIsReachedAndSingleExpiredMemberAvailable() external {
         // TODO: implement
         // TODO: validate elements are chained correctly
         // TODO: validate reuse of index
+        // TODO: validate that expired event is emitted
         // TODO: validate balance
     }
 
