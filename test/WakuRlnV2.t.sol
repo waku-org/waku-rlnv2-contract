@@ -328,6 +328,38 @@ contract WakuRlnV2Test is Test {
         w.extend(commitmentsToExtend);
     }
 
+    function test__ValidRegistrationExtendSingleMembership(uint32 userMessageLimit, uint32 numberOfPeriods) external {
+        vm.pauseGasMetering();
+        uint256 idCommitment = 2;
+        vm.assume(numberOfPeriods > 0 && numberOfPeriods < 100);
+        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit, numberOfPeriods);
+        vm.assume(
+            userMessageLimit >= w.minRateLimitPerMembership() && userMessageLimit <= w.maxRateLimitPerMembership()
+        );
+        vm.assume(w.isValidUserMessageLimit(userMessageLimit));
+        vm.resumeGasMetering();
+
+        w.register{ value: price }(idCommitment, userMessageLimit, numberOfPeriods);
+        (,,,, uint256 gracePeriodStartDate,,,,,) = w.members(idCommitment);
+
+        vm.warp(gracePeriodStartDate);
+
+        uint256[] memory commitmentsToExtend = new uint256[](1);
+        commitmentsToExtend[0] = idCommitment;
+
+        // Extend the membership
+        vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
+        emit Membership.MemberExtended(idCommitment, 0, 0, 0);
+        w.extend(commitmentsToExtend);
+
+        // Verify list order is correct
+        assertEq(w.tail(), idCommitment);
+        assertEq(w.head(), idCommitment);
+        (uint256 prev, uint256 next,,,,,,,,) = w.members(idCommitment);
+        assertEq(next, 0);
+        assertEq(prev, 0);
+    }
+
     function test__ValidRegistrationExpiry(uint32 userMessageLimit, uint32 numberOfPeriods) external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
@@ -473,45 +505,71 @@ contract WakuRlnV2Test is Test {
         vm.stopPrank();
         vm.resumeGasMetering();
 
-        (, uint256 price) = w.priceCalculator().calculate(1, 10);
-        w.register{ value: price }(1, 1, 10);
+        (, uint256 priceA) = w.priceCalculator().calculate(1, 10);
+        w.register{ value: priceA }(1, 1, 10);
         vm.warp(block.timestamp + 100);
-        w.register{ value: price }(2, 1, 10);
+        w.register{ value: priceA }(2, 1, 10);
         vm.warp(block.timestamp + 100);
         uint256 expirationDate = w.expirationDate(2);
         vm.warp(expirationDate);
-        w.register{ value: price }(3, 1, 10);
+        w.register{ value: priceA }(3, 1, 10);
 
         // Make sure only the first 2 memberships are expired
         assertTrue(w.isExpired(1));
         assertTrue(w.isExpired(2));
         assertFalse(w.isExpired(3) || w.isGracePeriod(3));
 
+        (,,,,,,, uint32 index1,,) = w.members(1);
+        (,,,,,,, uint32 index2,,) = w.members(2);
+
         // Attempt to register a membership that will require to expire 2 memberships
         // Currently there is 2 available, and we want to register 4
         // If we remove first membership, we'll have 3 available
         // If we also remove the second, we'll have 4 available
         vm.expectEmit(true, false, false, false);
-       emit Membership.MemberExpired(1, 0, 0);
+        emit Membership.MemberExpired(1, 0, 0);
         vm.expectEmit(true, false, false, false);
         emit Membership.MemberExpired(2, 0, 0);
-        (, price) = w.priceCalculator().calculate(4, 10);
-        w.register{ value: price }(4, 4, 10);
+        (, uint256 priceB) = w.priceCalculator().calculate(4, 10);
+        w.register{ value: priceB }(4, 4, 10);
 
-        // TODO: validate reuse of index
-        // TODO: validate balance
-        // TODO: check that the expired memberships are gone and membership 3 is still there
-        // TODO: check the usermessage limits (total)
-        // TODO: check that it reused the index of the one gone
-        // TODO: check head and tail are correct and next and prev
-        // TODO: there should be at least a single index available
-        // TODO: validate balance
+        // idCommitment4 will use the last removed index available (since we push to an array)
+        (,,,,,,, uint32 index4,,) = w.members(4);
+        assertEq(index4, index2);
+
+        // the index of the first removed membership is still available for further registrations
+        assertEq(index1, w.availableExpiredIndices(0));
+
+        // The previous expired memberships should have been erased
+        (,,,,,,,, address holder,) = w.members(1);
+        assertEq(holder, address(0));
+        (,,,,,,,, holder,) = w.members(2);
+        assertEq(holder, address(0));
+
+        // The total rate limit used should be those from idCommitment 3 and 4
+        assertEq(5, w.totalRateLimitPerEpoch());
+
+        // There should only be 2 memberships, the non expired and the new one
+        assertEq(w.head(), 3);
+        assertEq(w.tail(), 4);
+        (uint256 prev, uint256 next,,,,,,,,) = w.members(3);
+        assertEq(prev, 0);
+        assertEq(next, 4);
+        (prev, next,,,,,,,,) = w.members(4);
+        assertEq(prev, 3);
+        assertEq(next, 0);
+
+        // The balance available for withdrawal should match the amount of the expired membership
+        uint256 availableBalance = w.balancesToWithdraw(address(this), address(0));
+        assertEq(availableBalance, priceA * 2);
     }
 
     function test__RegistrationWhenMaxRateLimitIsReachedAndMultipleExpiredMembersAvailableButTheyDontHaveEnoughRateLimit(
     )
         external
     { }
+
+    function test__indexReuse() external { }
 
     function test__RemoveExpiredMemberships(uint32 userMessageLimit, uint32 numberOfPeriods) external {
         vm.pauseGasMetering();

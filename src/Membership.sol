@@ -202,33 +202,39 @@ contract Membership {
             revert InvalidRateLimit();
         }
 
+        // Storing in local variable to not access the storage frequently
+        // And we're using/modifying these variables in each iteration
+        uint256 _head = head;
+        uint256 _tail = tail;
+        uint256 _totalRateLimitPerEpoch = totalRateLimitPerEpoch;
+        uint32 _maxTotalRateLimitPerEpoch = maxTotalRateLimitPerEpoch;
+
         // Determine if we exceed the total rate limit
-        if (totalRateLimitPerEpoch + _rateLimit > maxTotalRateLimitPerEpoch) {
-            if (head == 0) revert ExceedAvailableMaxRateLimitPerEpoch(); // List is empty
+        if (_totalRateLimitPerEpoch + _rateLimit > _maxTotalRateLimitPerEpoch) {
+            if (_head == 0) revert ExceedAvailableMaxRateLimitPerEpoch(); // List is empty
 
             // Attempt to free expired membership slots
-            while (totalRateLimitPerEpoch + _rateLimit > maxTotalRateLimitPerEpoch) {
+            while (_totalRateLimitPerEpoch + _rateLimit > _maxTotalRateLimitPerEpoch && _head != 0) {
                 // Determine if there are any available spot in the membership map
                 // by looking at the oldest membership. If it's expired, we can free it
-                MembershipInfo memory oldestMembership = members[head];
+                MembershipInfo memory oldestMembership = members[_head];
                 if (
-                    oldestMembership.holder != address(0) // membership has a holder
-                        && _isExpired(
-                            oldestMembership.gracePeriodStartDate,
-                            oldestMembership.gracePeriod,
-                            oldestMembership.numberOfPeriods
-                        )
+                    _isExpired(
+                        oldestMembership.gracePeriodStartDate,
+                        oldestMembership.gracePeriod,
+                        oldestMembership.numberOfPeriods
+                    )
                 ) {
-                    emit MemberExpired(head, oldestMembership.userMessageLimit, oldestMembership.index);
+                    emit MemberExpired(_head, oldestMembership.userMessageLimit, oldestMembership.index);
 
                     // Deduct the expired membership rate limit
-                    totalRateLimitPerEpoch -= oldestMembership.userMessageLimit;
+                    _totalRateLimitPerEpoch -= oldestMembership.userMessageLimit;
 
                     // Remove the element from the list
-                    delete members[head];
+                    delete members[_head];
 
                     // Promote the next oldest membership to oldest
-                    head = oldestMembership.next;
+                    _head = oldestMembership.next;
 
                     // Move balance from expired membership to holder balance
                     balancesToWithdraw[oldestMembership.holder][oldestMembership.token] += oldestMembership.amount;
@@ -240,24 +246,22 @@ contract Membership {
             }
 
             // Ensure new head and tail are pointing to the correct memberships
-            if (head != 0) {
-                members[head].prev = 0;
+            if (_head != 0) {
+                members[_head].prev = 0;
             } else {
-                tail = 0;
+                _tail = 0;
             }
         }
 
-        uint256 prev = 0;
-        if (tail != 0) {
-            MembershipInfo storage latestMembership = members[tail];
-            latestMembership.next = _idCommitment;
-            prev = tail;
+        if (_tail != 0) {
+            members[_tail].next = _idCommitment;
         } else {
             // First item
-            head = _idCommitment;
+            _head = _idCommitment;
         }
 
-        totalRateLimitPerEpoch += _rateLimit;
+        // Adding the rate limit of the new registration
+        _totalRateLimitPerEpoch += _rateLimit;
 
         // Reuse available slots from previously removed expired memberships
         uint256 arrLen = availableExpiredIndices.length;
@@ -269,6 +273,7 @@ contract Membership {
             index = commitmentIndex;
         }
 
+        totalRateLimitPerEpoch = _totalRateLimitPerEpoch;
         members[_idCommitment] = MembershipInfo({
             holder: _sender,
             gracePeriodStartDate: block.timestamp + (uint256(billingPeriod) * uint256(_numberOfPeriods)),
@@ -278,10 +283,10 @@ contract Membership {
             amount: _amount,
             userMessageLimit: _rateLimit,
             next: 0, // It's the newest value, so point to nowhere
-            prev: prev,
+            prev: _tail,
             index: index
         });
-
+        head = _head;
         tail = _idCommitment;
     }
 
@@ -300,29 +305,40 @@ contract Membership {
 
         uint256 newGracePeriodStartDate = block.timestamp + (uint256(billingPeriod) * uint256(mdetails.numberOfPeriods));
 
-        uint256 mdetailsNext = mdetails.next;
-        uint256 mdetailsPrev = mdetails.prev;
+        uint256 next = mdetails.next;
+        uint256 prev = mdetails.prev;
+        uint256 _tail = tail;
+        uint256 _head = head;
 
         // Remove current membership references
-        if (mdetailsPrev != 0) {
-            members[mdetailsPrev].next = mdetailsNext;
+        if (prev != 0) {
+            members[prev].next = next;
         } else {
-            head = mdetailsNext;
+            _head = next;
         }
 
-        if (mdetailsNext != 0) {
-            members[mdetailsNext].prev = mdetailsPrev;
+        if (next != 0) {
+            members[next].prev = prev;
         } else {
-            tail = mdetailsPrev;
+            _tail = prev;
         }
 
         // Move membership to the end (since it will be the newest)
         mdetails.next = 0;
-        mdetails.prev = tail;
+        mdetails.prev = _tail;
         mdetails.gracePeriodStartDate = newGracePeriodStartDate;
         mdetails.gracePeriod = gracePeriod;
 
-        members[tail].next = _idCommitment;
+        // Link previous tail with membership that was just extended
+        if (_tail != 0) {
+            members[_tail].next = _idCommitment;
+        } else {
+            // There are no other items in the list.
+            // The head will become the extended commitment
+            _head = _idCommitment;
+        }
+
+        head = _head;
         tail = _idCommitment;
 
         emit MemberExtended(_idCommitment, mdetails.userMessageLimit, mdetails.index, newGracePeriodStartDate);
