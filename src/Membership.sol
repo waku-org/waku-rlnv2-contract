@@ -6,8 +6,6 @@ import "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import "openzeppelin-contracts/contracts/utils/Context.sol";
 
-import "forge-std/console.sol";
-
 // The number of periods should be greater than zero
 error NumberOfPeriodsCantBeZero();
 
@@ -226,19 +224,22 @@ contract Membership {
                     // Deduct the expired membership rate limit
                     totalRateLimitPerEpoch -= oldestMembership.userMessageLimit;
 
+                    // Remove the element from the list
+                    delete members[head];
+
                     // Promote the next oldest membership to oldest
                     uint256 nextOldest = oldestMembership.next;
                     head = nextOldest;
                     if (nextOldest != 0) {
                         members[nextOldest].prev = 0;
+                    } else {
+                        tail = 0;
                     }
 
                     // Move balance from expired membership to holder balance
                     balancesToWithdraw[oldestMembership.holder][oldestMembership.token] += oldestMembership.amount;
 
                     availableExpiredIndices.push(oldestMembership.index);
-
-                    delete members[head];
                 } else {
                     revert ExceedAvailableMaxRateLimitPerEpoch();
                 }
@@ -275,7 +276,7 @@ contract Membership {
             token: _token,
             amount: _amount,
             userMessageLimit: _rateLimit,
-            next: 0, // It's the last value, so point to nowhere
+            next: 0, // It's the newest value, so point to nowhere
             prev: prev,
             index: index
         });
@@ -296,7 +297,7 @@ contract Membership {
 
         if (_sender != mdetails.holder) revert NotHolder(_idCommitment);
 
-        uint256 newExpirationDate = block.timestamp + (uint256(billingPeriod) * uint256(mdetails.numberOfPeriods));
+        uint256 newGracePeriodStartDate = block.timestamp + (uint256(billingPeriod) * uint256(mdetails.numberOfPeriods));
 
         uint256 mdetailsNext = mdetails.next;
         uint256 mdetailsPrev = mdetails.prev;
@@ -317,13 +318,13 @@ contract Membership {
         // Move membership to the end (since it will be the newest)
         mdetails.next = 0;
         mdetails.prev = tail;
-        mdetails.gracePeriodStartDate = newExpirationDate;
+        mdetails.gracePeriodStartDate = newGracePeriodStartDate;
         mdetails.gracePeriod = gracePeriod;
 
         members[tail].next = _idCommitment;
         tail = _idCommitment;
 
-        emit MemberExtended(_idCommitment, mdetails.userMessageLimit, mdetails.index, newExpirationDate);
+        emit MemberExtended(_idCommitment, mdetails.userMessageLimit, mdetails.index, newGracePeriodStartDate);
     }
 
     /// @dev Determine whether a timestamp is considered to be expired or not after exceeding the grace period
@@ -349,9 +350,11 @@ contract Membership {
         return _isExpired(m.gracePeriodStartDate, m.gracePeriod, m.numberOfPeriods);
     }
 
+    /// @notice Returns the timestamp on which a membership can be considered expired
+    /// @param _idCommitment the idCommitment of the membership
     function expirationDate(uint256 _idCommitment) public view returns (uint256) {
         MembershipInfo memory m = members[_idCommitment];
-        return m.gracePeriodStartDate + (uint256(m.gracePeriod) * uint256(m.numberOfPeriods));
+        return m.gracePeriodStartDate + (uint256(m.gracePeriod) * uint256(m.numberOfPeriods)) + 1;
     }
 
     /// @dev Determine whether a timestamp is considered to be in grace period or not
