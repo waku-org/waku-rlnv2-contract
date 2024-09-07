@@ -600,8 +600,53 @@ contract WakuRlnV2Test is Test {
         w.register{ value: priceB }(4, 5, 10);
     }
 
-    function test__indexReuse() external {
-        revert("TODO: implement");
+    function test__indexReuse_eraseMemberships(uint32 idCommitmentsLength) external {
+        vm.assume(idCommitmentsLength > 0 && idCommitmentsLength < 50);
+
+        (, uint256 price) = w.priceCalculator().calculate(20, 1);
+        uint32 index;
+        uint256[] memory commitmentsToErase = new uint256[](idCommitmentsLength);
+        for (uint256 i = 1; i <= idCommitmentsLength; i++) {
+            w.register{ value: price }(i, 20, 1);
+            (,,,,,,, index,,) = w.members(i);
+            assertEq(index, w.commitmentIndex() - 1); // TODO: renname commitmentIndex to nextCommitmentIndex
+            commitmentsToErase[i - 1] = i;
+        }
+
+        // time travel to the moment we can erase all expired memberships
+        uint256 expirationDate = w.expirationDate(idCommitmentsLength);
+        vm.warp(expirationDate);
+        w.eraseMemberships(commitmentsToErase);
+
+        // Verify that expired indices match what we expect
+        for (uint32 i = 0; i < idCommitmentsLength; i++) {
+            assertEq(i, w.availableExpiredIndices(i));
+        }
+
+        uint32 currCommitmentIndex = w.commitmentIndex();
+        for (uint256 i = 1; i <= idCommitmentsLength; i++) {
+            uint256 idCommitment = i + 10;
+            uint256 expectedReusedIndexPos = idCommitmentsLength - i;
+            uint32 expectedIndex = w.availableExpiredIndices(expectedReusedIndexPos);
+            w.register{ value: price }(idCommitment, 20, 1);
+            (,,,,,,, index,,) = w.members(idCommitment);
+            assertEq(expectedIndex, index);
+            // Should have been removed from the list
+            vm.expectRevert();
+            w.availableExpiredIndices(expectedReusedIndexPos);
+            // Should not have been affected
+            assertEq(currCommitmentIndex, w.commitmentIndex());
+        }
+
+        // No indexes should be available for reuse
+        vm.expectRevert();
+        w.availableExpiredIndices(0);
+
+        // Should use a new index since we got rid of all available indexes
+        w.register{ value: price }(100, 20, 1);
+        (,,,,,,, index,,) = w.members(100);
+        assertEq(index, currCommitmentIndex);
+        assertEq(currCommitmentIndex + 1, w.commitmentIndex());
     }
 
     function test__RemoveExpiredMemberships(uint32 userMessageLimit, uint32 numberOfPeriods) external {
