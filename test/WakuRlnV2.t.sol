@@ -33,7 +33,6 @@ contract WakuRlnV2Test is Test {
         token.mint(address(this), 100_000_000 ether);
     }
 
-
     function test__ValidRegistration__kats() external {
         vm.pauseGasMetering();
         // Merkle tree leaves are calculated using 2 as rateLimit
@@ -315,7 +314,7 @@ contract WakuRlnV2Test is Test {
         vm.assume(w.isValidUserMessageLimit(userMessageLimit));
         vm.resumeGasMetering();
 
-token.approve(address(w), price);
+        token.approve(address(w), price);
         w.register(idCommitment, userMessageLimit);
         (,,, uint256 gracePeriodStartDate,,,,,) = w.members(idCommitment);
 
@@ -347,7 +346,7 @@ token.approve(address(w), price);
         vm.assume(w.isValidUserMessageLimit(userMessageLimit));
         vm.resumeGasMetering();
 
-token.approve(address(w), price);
+        token.approve(address(w), price);
         w.register(idCommitment, userMessageLimit);
 
         (,,, uint256 fetchedGracePeriodStartDate, uint32 fetchedGracePeriod,,,,) = w.members(idCommitment);
@@ -514,7 +513,7 @@ token.approve(address(w), price);
         // If we also remove the second, we'll have 4 available
         (, uint256 priceB) = w.priceCalculator().calculate(4);
         token.approve(address(w), priceB);
-      vm.expectEmit(true, false, false, false);
+        vm.expectEmit(true, false, false, false);
         emit Membership.MemberExpired(1, 0, 0);
         vm.expectEmit(true, false, false, false);
         emit Membership.MemberExpired(2, 0, 0);
@@ -566,12 +565,12 @@ token.approve(address(w), price);
         token.approve(address(w), priceA);
         w.register(1, 1);
         vm.warp(block.timestamp + 100);
-                token.approve(address(w), priceA);
+        token.approve(address(w), priceA);
         w.register(2, 1);
         vm.warp(block.timestamp + 100);
         uint256 expirationDate = w.expirationDate(2);
         vm.warp(expirationDate);
-                token.approve(address(w), priceA);
+        token.approve(address(w), priceA);
         w.register(3, 1);
 
         // Make sure only the first 2 memberships are expired
@@ -585,7 +584,7 @@ token.approve(address(w), price);
         // If we also remove the second, we'll have 4 available, but it is still not enough
         // for registering
         (, uint256 priceB) = w.priceCalculator().calculate(5);
-                token.approve(address(w), priceB);
+        token.approve(address(w), priceB);
         vm.expectRevert(abi.encodeWithSelector(ExceedAvailableMaxRateLimitPerEpoch.selector));
         w.register(4, 5);
     }
@@ -635,7 +634,7 @@ token.approve(address(w), price);
         w.availableExpiredIndices(0);
 
         // Should use a new index since we got rid of all available indexes
-                    token.approve(address(w), price);
+        token.approve(address(w), price);
         w.register(100, 20);
         (,,,,,, index,,) = w.members(100);
         assertEq(index, currCommitmentIndex);
@@ -654,7 +653,7 @@ token.approve(address(w), price);
 
         uint256 time = block.timestamp;
         for (uint256 i = 0; i < 5; i++) {
-                        token.approve(address(w), price);
+            token.approve(address(w), price);
             w.register(idCommitment + i, userMessageLimit);
             time += 100;
             vm.warp(time);
@@ -816,7 +815,7 @@ token.approve(address(w), price);
         (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
         vm.resumeGasMetering();
 
-            token.approve(address(w), price);
+        token.approve(address(w), price);
         w.register(idCommitment, userMessageLimit);
 
         token.approve(address(w), price);
@@ -876,7 +875,7 @@ token.approve(address(w), price);
         (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
         vm.resumeGasMetering();
 
-token.approve(address(w), price);
+        token.approve(address(w), price);
         w.register(idCommitment, userMessageLimit);
         uint256[] memory commitments = w.getCommitments(0, 0);
         assertEq(commitments.length, 1);
@@ -922,5 +921,4 @@ token.approve(address(w), price);
         );
         assertEq(fetchedImpl, newImpl);
     }
-
 }
