@@ -138,18 +138,21 @@ contract Membership {
     /// @param _sender address of the owner of the new membership
     /// @param _idCommitment the idcommitment of the new membership
     /// @param _rateLimit the user message limit
+    /// @param _eraseIfNeeded Erase expired memberships if the `_rateLimit` exceeds the available rate limit
     /// @return index the index in the merkle tree
     /// @return reusedIndex indicates whether a new leaf is being used or if using an existing leaf in the merkle tree
     function _acquireMembership(
         address _sender,
         uint256 _idCommitment,
-        uint32 _rateLimit
+        uint32 _rateLimit,
+        bool _eraseIfNeeded
     )
         internal
         returns (uint32 index, bool reusedIndex)
     {
         (address token, uint256 amount) = priceCalculator.calculate(_rateLimit);
-        (index, reusedIndex) = _setupMembershipDetails(_sender, _idCommitment, _rateLimit, token, amount);
+        (index, reusedIndex) =
+            _setupMembershipDetails(_sender, _idCommitment, _rateLimit, token, amount, _eraseIfNeeded);
         _transferFees(_sender, token, amount);
     }
 
@@ -166,6 +169,7 @@ contract Membership {
     /// @param _rateLimit User message limit
     /// @param _token Address of the token used to acquire the membership
     /// @param _amount Amount of the token used to acquire the membership
+    /// @param _eraseIfNeeded Erase expired memberships if the `_rateLimit` exceeds the available rate limit
     /// @return index membership index on the merkle tree
     /// @return reusedIndex indicates whether the index returned was a reused slot on the tree or not
     function _setupMembershipDetails(
@@ -173,7 +177,8 @@ contract Membership {
         uint256 _idCommitment,
         uint32 _rateLimit,
         address _token,
-        uint256 _amount
+        uint256 _amount,
+        bool _eraseIfNeeded
     )
         internal
         returns (uint32 index, bool reusedIndex)
@@ -191,7 +196,8 @@ contract Membership {
 
         // Determine if we exceed the total rate limit
         if (_totalRateLimitPerEpoch + _rateLimit > _maxTotalRateLimitPerEpoch) {
-            if (_head == 0) revert ExceedAvailableMaxRateLimitPerEpoch(); // List is empty
+            if (_head == 0 || !_eraseIfNeeded) revert ExceedAvailableMaxRateLimitPerEpoch(); // List is empty or can't
+                // erase memberships automatically
 
             // Attempt to free expired membership slots
             while (_totalRateLimitPerEpoch + _rateLimit > _maxTotalRateLimitPerEpoch && _head != 0) {

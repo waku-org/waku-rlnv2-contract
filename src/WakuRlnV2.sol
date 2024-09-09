@@ -138,19 +138,40 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
     /// @notice Allows a user to register as a member
     /// @param idCommitment The idCommitment of the member
     /// @param userMessageLimit The message limit of the member
-    function register(
-        uint256 idCommitment,
-        uint32 userMessageLimit
-    )
-        external
-        payable
-        onlyValidIdCommitment(idCommitment)
-    {
+    function register(uint256 idCommitment, uint32 userMessageLimit) external onlyValidIdCommitment(idCommitment) {
         if (memberExists(idCommitment)) revert DuplicateIdCommitment();
 
         uint32 index;
         bool reusedIndex;
-        (index, reusedIndex) = _acquireMembership(_msgSender(), idCommitment, userMessageLimit);
+        (index, reusedIndex) = _acquireMembership(_msgSender(), idCommitment, userMessageLimit, true);
+
+        _register(idCommitment, userMessageLimit, index, reusedIndex);
+    }
+
+    /// @notice Allows a user to register as a member
+    /// @param idCommitment The idCommitment of the member
+    /// @param userMessageLimit The message limit of the member
+    /// @param membershipsToErase List of expired idCommitments to erase
+    function register(
+        uint256 idCommitment,
+        uint32 userMessageLimit,
+        uint256[] calldata membershipsToErase
+    )
+        external
+        onlyValidIdCommitment(idCommitment)
+    {
+        if (memberExists(idCommitment)) revert DuplicateIdCommitment();
+
+        for (uint256 i = 0; i < membershipsToErase.length; i++) {
+            uint256 idCommitmentToErase = membershipsToErase[i];
+            MembershipInfo memory mdetails = members[idCommitmentToErase];
+            _eraseMembership(_msgSender(), idCommitmentToErase, mdetails);
+            LazyIMT.update(imtData, 0, mdetails.index);
+        }
+
+        uint32 index;
+        bool reusedIndex;
+        (index, reusedIndex) = _acquireMembership(_msgSender(), idCommitment, userMessageLimit, false);
 
         _register(idCommitment, userMessageLimit, index, reusedIndex);
     }
