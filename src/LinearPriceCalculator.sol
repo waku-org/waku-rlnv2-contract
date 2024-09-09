@@ -31,7 +31,7 @@ contract LinearPriceCalculator is IPriceCalculator, Ownable {
     /// @param _rateLimit the rate limit the user wants to acquire
     /// @return address of the erc20 token
     /// @return uint price to pay for acquiring the specified `_rateLimit`
-    function calculate(uint256 _rateLimit) external view returns (address, uint256) {
+    function calculate(uint32 _rateLimit) external view returns (address, uint256) {
         return (token, uint256(_rateLimit) * pricePerMessagePerEpoch);
     }
 }

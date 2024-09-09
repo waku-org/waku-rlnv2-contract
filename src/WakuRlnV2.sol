@@ -69,8 +69,8 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
     function initialize(
         address _priceCalculator,
         uint32 _maxTotalRateLimitPerEpoch,
-        uint16 _minRateLimitPerMembership,
-        uint16 _maxRateLimitPerMembership,
+        uint32 _minRateLimitPerMembership,
+        uint32 _maxRateLimitPerMembership,
         uint32 _billingPeriod,
         uint32 _gracePeriod
     )
