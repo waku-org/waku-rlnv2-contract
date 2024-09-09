@@ -11,9 +11,9 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { BaseScript } from "./Base.s.sol";
 
 contract Deploy is BaseScript {
-    function run() public broadcast returns (WakuRlnV2 w, address impl) {
+    function run(address _token) public broadcast returns (WakuRlnV2 w, address impl) {
         // TODO: Use the correct values when deploying to mainnet
-        address priceCalcAddr = address(new LinearPriceCalculator(address(0), 0.05 ether));
+        address priceCalcAddr = address(new LinearPriceCalculator(_token, 0.05 ether));
         // TODO: set DAI address 0x6B175474E89094C44Da98b954EedeAC495271d0F
         impl = address(new WakuRlnV2());
         bytes memory data = abi.encodeCall(WakuRlnV2.initialize, (priceCalcAddr, 160_000, 20, 600, 180 days, 30 days));

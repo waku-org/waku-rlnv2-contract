@@ -5,9 +5,6 @@ import { IPriceCalculator } from "./IPriceCalculator.sol";
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
-// ETH Amount passed as value on the transaction is not correct
-error IncorrectAmount();
-
 // An eth value was assigned in the transaction and only tokens were expected
 error OnlyTokensAccepted();
 
@@ -157,12 +154,8 @@ contract Membership {
     }
 
     function _transferFees(address _from, address _token, uint256 _amount) internal {
-        if (_token == address(0)) {
-            if (msg.value != _amount) revert IncorrectAmount();
-        } else {
-            if (msg.value != 0) revert OnlyTokensAccepted();
-            IERC20(_token).safeTransferFrom(_from, address(this), _amount);
-        }
+        if (msg.value != 0) revert OnlyTokensAccepted();
+        IERC20(_token).safeTransferFrom(_from, address(this), _amount);
     }
 
     /// @dev Setup a new membership. If there are not enough remaining rate limit to acquire
@@ -406,18 +399,14 @@ contract Membership {
 
     /// @dev Withdraw any available balance in tokens after a membership is erased.
     /// @param _sender the address of the owner of the tokens
-    /// @param _token the address of the token to withdraw. Use 0x000...000 to withdraw ETH
+    /// @param _token the address of the token to withdraw.
     function _withdraw(address _sender, address _token) internal {
+        require(_token != address(0), "ETH is not allowed");
+
         uint256 amount = balancesToWithdraw[_sender][_token];
         require(amount > 0, "Insufficient balance");
 
         balancesToWithdraw[_sender][_token] = 0;
-        if (_token == address(0)) {
-            // ETH
-            (bool success,) = _sender.call{ value: amount }("");
-            require(success, "eth transfer failed");
-        } else {
-            IERC20(_token).safeTransfer(_sender, amount);
-        }
+        IERC20(_token).safeTransfer(_sender, amount);
     }
 }

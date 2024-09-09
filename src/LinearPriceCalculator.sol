@@ -13,6 +13,7 @@ contract LinearPriceCalculator is IPriceCalculator, Ownable {
     uint256 public pricePerMessagePerEpoch;
 
     constructor(address _token, uint256 _pricePerMessagePerEpoch) Ownable() {
+        require(_token != address(0), "only tokens can be used");
         token = _token;
         pricePerMessagePerEpoch = _pricePerMessagePerEpoch;
     }
@@ -21,6 +22,7 @@ contract LinearPriceCalculator is IPriceCalculator, Ownable {
     /// @param _token The token accepted by the membership management for RLN
     /// @param _pricePerPeriod Price per message per epoch
     function setTokenAndPrice(address _token, uint256 _pricePerPeriod) external onlyOwner {
+        require(_token != address(0), "only tokens can be used");
         token = _token;
         pricePerMessagePerEpoch = _pricePerPeriod;
     }
