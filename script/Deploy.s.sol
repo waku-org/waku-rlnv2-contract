@@ -16,8 +16,7 @@ contract Deploy is BaseScript {
         address priceCalcAddr = address(new LinearPriceCalculator(address(0), 0.05 ether));
         // TODO: set DAI address 0x6B175474E89094C44Da98b954EedeAC495271d0F
         impl = address(new WakuRlnV2());
-        bytes memory data = abi.encodeCall(WakuRlnV2.initialize, (priceCalcAddr, 160_000, 20, 600, 30 days, 5 days));
-        // (priceCalcAddr,  160000, 20, 600, 30 days, 5 days)
+        bytes memory data = abi.encodeCall(WakuRlnV2.initialize, (priceCalcAddr, 160_000, 20, 600, 180 days, 30 days));
         address proxy = address(new ERC1967Proxy(impl, data));
         w = WakuRlnV2(proxy);
     }

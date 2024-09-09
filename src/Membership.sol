@@ -5,9 +5,6 @@ import { IPriceCalculator } from "./IPriceCalculator.sol";
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 
-// The number of periods should be greater than zero
-error NumberOfPeriodsCantBeZero();
-
 // ETH Amount passed as value on the transaction is not correct
 error IncorrectAmount();
 
@@ -46,7 +43,7 @@ contract Membership {
     uint32 public minRateLimitPerMembership;
 
     /// @notice Membership billing period
-    uint32 public billingPeriod;
+    uint32 public expirationTerm;
 
     /// @notice Membership grace period
     uint32 public gracePeriod;
@@ -79,8 +76,6 @@ contract Membership {
         uint256 next;
         /// @notice amount of the token used to acquire this membership
         uint256 amount;
-        /// @notice numberOfPeriods
-        uint32 numberOfPeriods;
         /// @notice timestamp of when the grace period starts for this membership
         uint256 gracePeriodStartDate;
         /// @notice duration of the grace period
@@ -130,7 +125,7 @@ contract Membership {
         maxTotalRateLimitPerEpoch = _maxTotalRateLimitPerEpoch;
         maxRateLimitPerMembership = _maxRateLimitPerMembership;
         minRateLimitPerMembership = _minRateLimitPerMembership;
-        billingPeriod = _expirationTerm;
+        expirationTerm = _expirationTerm;
         gracePeriod = _gracePeriod;
     }
 
@@ -146,23 +141,18 @@ contract Membership {
     /// @param _sender address of the owner of the new membership
     /// @param _idCommitment the idcommitment of the new membership
     /// @param _rateLimit the user message limit
-    /// @param _numberOfPeriods the number of periods the user wants to acquire
     /// @return index the index in the merkle tree
     /// @return reusedIndex indicates whether a new leaf is being used or if using an existing leaf in the merkle tree
     function _acquireMembership(
         address _sender,
         uint256 _idCommitment,
-        uint32 _rateLimit,
-        uint32 _numberOfPeriods
+        uint32 _rateLimit
     )
         internal
         returns (uint32 index, bool reusedIndex)
     {
-        if (_numberOfPeriods == 0) revert NumberOfPeriodsCantBeZero();
-
-        (address token, uint256 amount) = priceCalculator.calculate(_rateLimit, _numberOfPeriods);
-        (index, reusedIndex) =
-            _setupMembershipDetails(_sender, _idCommitment, _rateLimit, _numberOfPeriods, token, amount);
+        (address token, uint256 amount) = priceCalculator.calculate(_rateLimit);
+        (index, reusedIndex) = _setupMembershipDetails(_sender, _idCommitment, _rateLimit, token, amount);
         _transferFees(_sender, token, amount);
     }
 
@@ -181,7 +171,6 @@ contract Membership {
     /// @param _sender holder of the membership. Generally `msg.sender`
     /// @param _idCommitment IDCommitment
     /// @param _rateLimit User message limit
-    /// @param _numberOfPeriods the number of periods the user wants to acquire
     /// @param _token Address of the token used to acquire the membership
     /// @param _amount Amount of the token used to acquire the membership
     /// @return index membership index on the merkle tree
@@ -190,7 +179,6 @@ contract Membership {
         address _sender,
         uint256 _idCommitment,
         uint32 _rateLimit,
-        uint32 _numberOfPeriods,
         address _token,
         uint256 _amount
     )
@@ -217,13 +205,9 @@ contract Membership {
                 // Determine if there are any available spot in the membership map
                 // by looking at the oldest membership. If it's expired, we can free it
                 MembershipInfo memory oldestMembership = members[_head];
-                if (
-                    !_isExpired(
-                        oldestMembership.gracePeriodStartDate,
-                        oldestMembership.gracePeriod,
-                        oldestMembership.numberOfPeriods
-                    )
-                ) revert ExceedAvailableMaxRateLimitPerEpoch();
+                if (!_isExpired(oldestMembership.gracePeriodStartDate, oldestMembership.gracePeriod)) {
+                    revert ExceedAvailableMaxRateLimitPerEpoch();
+                }
 
                 emit MemberExpired(_head, oldestMembership.userMessageLimit, oldestMembership.index);
 
@@ -266,9 +250,8 @@ contract Membership {
         totalRateLimitPerEpoch = _totalRateLimitPerEpoch;
         members[_idCommitment] = MembershipInfo({
             holder: _sender,
-            gracePeriodStartDate: block.timestamp + (uint256(billingPeriod) * uint256(_numberOfPeriods)),
+            gracePeriodStartDate: block.timestamp + uint256(expirationTerm),
             gracePeriod: gracePeriod,
-            numberOfPeriods: _numberOfPeriods,
             token: _token,
             amount: _amount,
             userMessageLimit: _rateLimit,
@@ -301,14 +284,13 @@ contract Membership {
     function _extendMembership(address _sender, uint256 _idCommitment) public {
         MembershipInfo storage mdetails = members[_idCommitment];
 
-        if (!_isGracePeriod(mdetails.gracePeriodStartDate, mdetails.gracePeriod, mdetails.numberOfPeriods)) {
-            // TODO: can a membership that has exceeded the expired period be extended?
+        if (!_isGracePeriod(mdetails.gracePeriodStartDate, mdetails.gracePeriod)) {
             revert NotInGracePeriod(_idCommitment);
         }
 
         if (_sender != mdetails.holder) revert NotHolder(_idCommitment);
 
-        uint256 gracePeriodStartDate = block.timestamp + (uint256(billingPeriod) * uint256(mdetails.numberOfPeriods));
+        uint256 gracePeriodStartDate = block.timestamp + uint256(expirationTerm);
 
         uint256 next = mdetails.next;
         uint256 prev = mdetails.prev;
@@ -352,67 +334,47 @@ contract Membership {
     /// @dev Determine whether a timestamp is considered to be expired or not after exceeding the grace period
     /// @param _gracePeriodStartDate timestamp in which the grace period starts
     /// @param _gracePeriod duration of the grace period
-    /// @param _numberOfPeriods the number of periods the user wants to acquire
-    function _isExpired(
-        uint256 _gracePeriodStartDate,
-        uint32 _gracePeriod,
-        uint32 _numberOfPeriods
-    )
-        internal
-        view
-        returns (bool)
-    {
-        return block.timestamp > _gracePeriodStartDate + (uint256(_gracePeriod) * uint256(_numberOfPeriods));
+    function _isExpired(uint256 _gracePeriodStartDate, uint32 _gracePeriod) internal view returns (bool) {
+        return block.timestamp > _gracePeriodStartDate + uint256(_gracePeriod);
     }
 
     /// @notice Determine if a membership is expired (has exceeded the grace period)
     /// @param _idCommitment the idCommitment of the membership
     function isExpired(uint256 _idCommitment) public view returns (bool) {
         MembershipInfo memory m = members[_idCommitment];
-        return _isExpired(m.gracePeriodStartDate, m.gracePeriod, m.numberOfPeriods);
+        return _isExpired(m.gracePeriodStartDate, m.gracePeriod);
     }
 
     /// @notice Returns the timestamp on which a membership can be considered expired
     /// @param _idCommitment the idCommitment of the membership
     function expirationDate(uint256 _idCommitment) public view returns (uint256) {
         MembershipInfo memory m = members[_idCommitment];
-        return m.gracePeriodStartDate + (uint256(m.gracePeriod) * uint256(m.numberOfPeriods)) + 1;
+        return m.gracePeriodStartDate + uint256(m.gracePeriod) + 1;
     }
 
     /// @dev Determine whether a timestamp is considered to be in grace period or not
     /// @param _gracePeriodStartDate timestamp in which the grace period starts
     /// @param _gracePeriod duration of the grace period
-    /// @param _numberOfPeriods the number of periods the user wants to acquire
-    function _isGracePeriod(
-        uint256 _gracePeriodStartDate,
-        uint32 _gracePeriod,
-        uint32 _numberOfPeriods
-    )
-        internal
-        view
-        returns (bool)
-    {
+    function _isGracePeriod(uint256 _gracePeriodStartDate, uint32 _gracePeriod) internal view returns (bool) {
         uint256 blockTimestamp = block.timestamp;
-        return blockTimestamp >= _gracePeriodStartDate
-            && blockTimestamp <= _gracePeriodStartDate + (uint256(_gracePeriod) * uint256(_numberOfPeriods));
+        return
+            blockTimestamp >= _gracePeriodStartDate && blockTimestamp <= _gracePeriodStartDate + uint256(_gracePeriod);
     }
 
     /// @notice Determine if a membership is in grace period
     /// @param _idCommitment the idCommitment of the membership
     function isGracePeriod(uint256 _idCommitment) public view returns (bool) {
         MembershipInfo memory m = members[_idCommitment];
-        return _isGracePeriod(m.gracePeriodStartDate, m.gracePeriod, m.numberOfPeriods);
+        return _isGracePeriod(m.gracePeriodStartDate, m.gracePeriod);
     }
 
     /// @dev Remove expired memberships or owned memberships in grace period.
     /// @param _sender address of the sender of transaction (will be used to check memberships in grace period)
     /// @param _idCommitment IDCommitment of the membership to erase
     function _eraseMembership(address _sender, uint256 _idCommitment, MembershipInfo memory _mdetails) internal {
-        bool membershipExpired =
-            _isExpired(_mdetails.gracePeriodStartDate, _mdetails.gracePeriod, _mdetails.numberOfPeriods);
-        bool isGracePeriodAndOwned = _isGracePeriod(
-            _mdetails.gracePeriodStartDate, _mdetails.gracePeriod, _mdetails.numberOfPeriods
-        ) && _mdetails.holder == _sender;
+        bool membershipExpired = _isExpired(_mdetails.gracePeriodStartDate, _mdetails.gracePeriod);
+        bool isGracePeriodAndOwned =
+            _isGracePeriod(_mdetails.gracePeriodStartDate, _mdetails.gracePeriod) && _mdetails.holder == _sender;
 
         if (!membershipExpired && !isGracePeriodAndOwned) revert CantEraseMembership(_idCommitment);
 

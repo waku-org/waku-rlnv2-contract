@@ -138,11 +138,9 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
     /// @notice Allows a user to register as a member
     /// @param idCommitment The idCommitment of the member
     /// @param userMessageLimit The message limit of the member
-    /// @param numberOfPeriods The number of periods to acquire
     function register(
         uint256 idCommitment,
-        uint32 userMessageLimit,
-        uint32 numberOfPeriods // TODO: is there a maximum number of periods allowed?
+        uint32 userMessageLimit
     )
         external
         payable
@@ -152,7 +150,7 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
 
         uint32 index;
         bool reusedIndex;
-        (index, reusedIndex) = _acquireMembership(_msgSender(), idCommitment, userMessageLimit, numberOfPeriods);
+        (index, reusedIndex) = _acquireMembership(_msgSender(), idCommitment, userMessageLimit);
 
         _register(idCommitment, userMessageLimit, index, reusedIndex);
     }
@@ -267,11 +265,11 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
         minRateLimitPerMembership = _minRateLimitPerMembership;
     }
 
-    /// @notice Set the membership billing period
-    /// @param _billingPeriod  new value
-    function setBillingPeriod(uint32 _billingPeriod) external onlyOwner {
-        require(_billingPeriod > 0);
-        billingPeriod = _billingPeriod;
+    /// @notice Set the membership expiration term
+    /// @param _expirationTerm  new value
+    function setBillingPeriod(uint32 _expirationTerm) external onlyOwner {
+        require(_expirationTerm > 0);
+        expirationTerm = _expirationTerm;
     }
 
     /// @notice Set the membership grace period
