@@ -371,6 +371,71 @@ contract WakuRlnV2Test is Test {
         assertEq(w.tail(), idCommitment + 5);
     }
 
+    function test__ValidRegistrationWithEraseList() external {
+        vm.pauseGasMetering();
+        vm.startPrank(w.owner());
+        w.setMinRateLimitPerMembership(20);
+        w.setMaxRateLimitPerMembership(100);
+        w.setMaxTotalRateLimitPerEpoch(100);
+        vm.stopPrank();
+        vm.resumeGasMetering();
+
+        (, uint256 price) = w.priceCalculator().calculate(20);
+
+        for (uint256 i = 1; i <= 5; i++) {
+            token.approve(address(w), price);
+            w.register(i, 20);
+            // Make sure they're expired
+            vm.warp(w.expirationDate(i));
+        }
+
+        // Time travel to a point in which the last commitment is active
+        (,,, uint256 gracePeriodStartDate,,,,,) = w.members(5);
+        vm.warp(gracePeriodStartDate - 1);
+
+        // Ensure that this is the case
+        assertTrue(w.isExpired(4));
+        assertFalse(w.isExpired(5));
+        assertFalse(w.isGracePeriod(5));
+
+        (, price) = w.priceCalculator().calculate(60);
+        token.approve(address(w), price);
+
+        // Attempt to expire 3 commitments including one that can't be erased (the last one)
+        uint256[] memory commitmentsToErase = new uint256[](3);
+        commitmentsToErase[0] = 1;
+        commitmentsToErase[1] = 2;
+        commitmentsToErase[2] = 5; // This one is still active
+        token.approve(address(w), price);
+        vm.expectRevert(abi.encodeWithSelector(CantEraseMembership.selector, 5));
+        w.register(6, 60, commitmentsToErase);
+
+        // Attempt to expire 3 commitments that can be erased
+        commitmentsToErase[2] = 4;
+        vm.expectEmit(true, false, false, false);
+        emit Membership.MemberExpired(1, 0, 0);
+        vm.expectEmit(true, false, false, false);
+        emit Membership.MemberExpired(2, 0, 0);
+        vm.expectEmit(true, false, false, false);
+        emit Membership.MemberExpired(4, 0, 0);
+        w.register(6, 60, commitmentsToErase);
+
+        // Ensure that the chosen memberships were erased and others unaffected
+        address holder;
+        (,,,,,,, holder,) = w.members(1);
+        assertEq(holder, address(0));
+        (,,,,,,, holder,) = w.members(2);
+        assertEq(holder, address(0));
+        (,,,,,,, holder,) = w.members(3);
+        assertEq(holder, address(this));
+        (,,,,,,, holder,) = w.members(4);
+        assertEq(holder, address(0));
+        (,,,,,,, holder,) = w.members(5);
+        assertEq(holder, address(this));
+        (,,,,,,, holder,) = w.members(6);
+        assertEq(holder, address(this));
+    }
+
     function test__RegistrationWhenMaxRateLimitIsReached() external {
         vm.pauseGasMetering();
         vm.startPrank(w.owner());
