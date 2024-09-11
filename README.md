@@ -59,7 +59,14 @@ $ forge coverage
 #### Deploy to Anvil:
 
 ```sh
-$ forge script script/Deploy.s.sol --broadcast --fork-url http://localhost:8545
+$ TOKEN_ADDRESS=0x1122334455667788990011223344556677889900 forge script script/Deploy.s.sol --broadcast --rpc-url localhost --tc Deploy
+```
+
+Replace the `TOKEN_ADDRESS` value by a token address you have deployed on anvil. A `TestToken` is available in
+`test/TestToken.sol` and can be deployed with
+
+```sh
+forge script test/TestToken.sol --broadcast --rpc-url localhost --tc TestTokenFactory
 ```
 
 For this script to work, you need to have a `MNEMONIC` environment variable set to a valid

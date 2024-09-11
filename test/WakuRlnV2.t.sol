@@ -26,7 +26,7 @@ contract WakuRlnV2Test is Test {
         token = new TestToken();
 
         Deploy deployment = new Deploy();
-        (w, impl) = deployment.run(address(token));
+        (w, impl) = deployment.deploy(address(token));
 
         // Minting a large number of tokens to not have to worry about
         // Not having enough balance
@@ -898,7 +898,7 @@ contract WakuRlnV2Test is Test {
 
         /*| Name                | Type                                                | Slot | Offset | Bytes |
           |---------------------|-----------------------------------------------------|------|--------|-------|
-          | nextCommitmentIndex     | uint32                                              | 206  | 0      | 4     | */
+        | nextCommitmentIndex   | uint32                                              | 206  | 0      | 4     | */
 
         /*
         Pro tip: to easily find the storage slot of a variable, without having to calculate the storage layout

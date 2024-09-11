@@ -11,14 +11,29 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { BaseScript } from "./Base.s.sol";
 
 contract Deploy is BaseScript {
-    function run(address _token) public broadcast returns (WakuRlnV2 w, address impl) {
-        // TODO: Use the correct values when deploying to mainnet
+    function run() public broadcast returns (WakuRlnV2 w, address impl) {
+        address _token = _getTokenAddress();
+        return deploy(_token);
+    }
+
+    function deploy(address _token) public returns (WakuRlnV2 w, address impl) {
         address priceCalcAddr = address(new LinearPriceCalculator(_token, 0.05 ether));
-        // TODO: set DAI address 0x6B175474E89094C44Da98b954EedeAC495271d0F
         impl = address(new WakuRlnV2());
         bytes memory data = abi.encodeCall(WakuRlnV2.initialize, (priceCalcAddr, 160_000, 20, 600, 180 days, 30 days));
         address proxy = address(new ERC1967Proxy(impl, data));
         w = WakuRlnV2(proxy);
+    }
+
+    function _getTokenAddress() internal view returns (address) {
+        try vm.envAddress("TOKEN_ADDRESS") returns (address passedAddress) {
+            return passedAddress;
+        } catch {
+            if (block.chainid == 1) {
+                return 0x6B175474E89094C44Da98b954EedeAC495271d0F; // DAI address on mainnet
+            } else {
+                revert("no TOKEN_ADDRESS was specified");
+            }
+        }
     }
 }
 
