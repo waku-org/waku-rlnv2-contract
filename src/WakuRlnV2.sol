@@ -96,7 +96,7 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
         SET_SIZE = uint32(1 << DEPTH);
         deployedBlockNumber = uint32(block.number);
         LazyIMT.init(imtData, DEPTH);
-        commitmentIndex = 0;
+        nextCommitmentIndex = 0;
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner { } // solhint-disable-line
@@ -183,14 +183,14 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
     /// @param reusedIndex indicates whether we're inserting a new element in the merkle tree or updating a existing
     /// leaf
     function _register(uint256 idCommitment, uint32 userMessageLimit, uint32 index, bool reusedIndex) internal {
-        if (commitmentIndex >= SET_SIZE) revert FullTree();
+        if (nextCommitmentIndex >= SET_SIZE) revert FullTree();
 
         uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
         if (reusedIndex) {
             LazyIMT.update(imtData, rateCommitment, index);
         } else {
             LazyIMT.insert(imtData, rateCommitment);
-            commitmentIndex += 1;
+            nextCommitmentIndex += 1;
         }
 
         emit MemberRegistered(rateCommitment, index);
@@ -202,7 +202,7 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
     /// @return The commitments of the members
     function getCommitments(uint32 startIndex, uint32 endIndex) public view returns (uint256[] memory) {
         if (startIndex > endIndex) revert InvalidPaginationQuery(startIndex, endIndex);
-        if (endIndex > commitmentIndex) revert InvalidPaginationQuery(startIndex, endIndex);
+        if (endIndex > nextCommitmentIndex) revert InvalidPaginationQuery(startIndex, endIndex);
 
         uint256[] memory commitments = new uint256[](endIndex - startIndex + 1);
         for (uint32 i = startIndex; i <= endIndex; i++) {

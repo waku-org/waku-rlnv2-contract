@@ -54,8 +54,8 @@ contract Membership {
     /// @notice List of registered memberships
     mapping(uint256 idCommitment => MembershipInfo member) public members;
 
-    /// @notice The index of the next member to be registered
-    uint32 public commitmentIndex;
+    /// @notice The index on the merkle tree for the next member to be registered
+    uint32 public nextCommitmentIndex;
 
     /// @notice track available indices that are available due to expired memberships being removed
     uint32[] public availableExpiredIndices;
@@ -273,7 +273,7 @@ contract Membership {
             availableExpiredIndices.pop();
             reusedIndex = true;
         } else {
-            index = commitmentIndex;
+            index = nextCommitmentIndex;
         }
     }
 

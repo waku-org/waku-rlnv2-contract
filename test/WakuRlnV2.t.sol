@@ -46,7 +46,7 @@ contract WakuRlnV2Test is Test {
         token.approve(address(w), price);
         w.register(idCommitment, userMessageLimit);
         vm.pauseGasMetering();
-        assertEq(w.commitmentIndex(), 1);
+        assertEq(w.nextCommitmentIndex(), 1);
         assertEq(w.memberExists(idCommitment), true);
         (,,,,, uint32 fetchedUserMessageLimit, uint32 index, address holder,) = w.members(idCommitment);
         assertEq(fetchedUserMessageLimit, userMessageLimit);
@@ -664,7 +664,7 @@ contract WakuRlnV2Test is Test {
             token.approve(address(w), price);
             w.register(i, 20);
             (,,,,,, index,,) = w.members(i);
-            assertEq(index, w.commitmentIndex() - 1); // TODO: renname commitmentIndex to nextCommitmentIndex
+            assertEq(index, w.nextCommitmentIndex() - 1);
             commitmentsToErase[i - 1] = i;
         }
 
@@ -678,7 +678,7 @@ contract WakuRlnV2Test is Test {
             assertEq(i, w.availableExpiredIndices(i));
         }
 
-        uint32 currCommitmentIndex = w.commitmentIndex();
+        uint32 currnextCommitmentIndex = w.nextCommitmentIndex();
         for (uint256 i = 1; i <= idCommitmentsLength; i++) {
             uint256 idCommitment = i + 10;
             uint256 expectedReusedIndexPos = idCommitmentsLength - i;
@@ -691,7 +691,7 @@ contract WakuRlnV2Test is Test {
             vm.expectRevert();
             w.availableExpiredIndices(expectedReusedIndexPos);
             // Should not have been affected
-            assertEq(currCommitmentIndex, w.commitmentIndex());
+            assertEq(currnextCommitmentIndex, w.nextCommitmentIndex());
         }
 
         // No indexes should be available for reuse
@@ -702,8 +702,8 @@ contract WakuRlnV2Test is Test {
         token.approve(address(w), price);
         w.register(100, 20);
         (,,,,,, index,,) = w.members(100);
-        assertEq(index, currCommitmentIndex);
-        assertEq(currCommitmentIndex + 1, w.commitmentIndex());
+        assertEq(index, currnextCommitmentIndex);
+        assertEq(currnextCommitmentIndex + 1, w.nextCommitmentIndex());
     }
 
     function test__RemoveExpiredMemberships(uint32 userMessageLimit) external {
@@ -898,7 +898,7 @@ contract WakuRlnV2Test is Test {
 
         /*| Name                | Type                                                | Slot | Offset | Bytes |
           |---------------------|-----------------------------------------------------|------|--------|-------|
-          | commitmentIndex     | uint32                                              | 206  | 0      | 4     | */
+          | nextCommitmentIndex     | uint32                                              | 206  | 0      | 4     | */
 
         /*
         Pro tip: to easily find the storage slot of a variable, without having to calculate the storage layout
@@ -916,7 +916,7 @@ contract WakuRlnV2Test is Test {
         If the storage layout changes, update the next line accordingly
         */
 
-        // we set commitmentIndex to 4294967295 (1 << 20) = 0x00100000
+        // we set nextCommitmentIndex to 4294967295 (1 << 20) = 0x00100000
         vm.store(address(w), bytes32(uint256(206)), 0x0000000000000000000000000000000000000000000000000000000000100000);
         token.approve(address(w), price);
         vm.expectRevert(FullTree.selector);
@@ -928,7 +928,7 @@ contract WakuRlnV2Test is Test {
         w.getCommitments(1, 0);
     }
 
-    function test__InvalidPaginationQuery__EndIndexGTcommitmentIndex() external {
+    function test__InvalidPaginationQuery__EndIndexGTnextCommitmentIndex() external {
         vm.expectRevert(abi.encodeWithSelector(InvalidPaginationQuery.selector, 0, 2));
         w.getCommitments(0, 2);
     }
