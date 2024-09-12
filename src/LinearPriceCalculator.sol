@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import { Ownable } from "openzeppelin-contracts/contracts/access/Ownable.sol";
+import { Ownable2Step } from "openzeppelin-contracts/contracts/access/Ownable2Step.sol";
 import { IPriceCalculator } from "./IPriceCalculator.sol";
 
+/// Address 0x0000...0000 was used instead of an ERC20 token address
+error OnlyERC20TokensAllowed();
+
 /// @title Linear Price Calculator to determine the price to acquire a membership
-contract LinearPriceCalculator is IPriceCalculator, Ownable {
-    /// @notice Address of the ERC20 token accepted by this contract. Address(0) represents ETH
+contract LinearPriceCalculator is IPriceCalculator, Ownable2Step {
+    /// @notice Address of the ERC20 token accepted by this contract.
     address public token;
 
     /// @notice The price per message per epoch
     uint256 public pricePerMessagePerEpoch;
 
-    constructor(address _token, uint256 _pricePerMessagePerEpoch) Ownable() {
-        require(_token != address(0), "only tokens can be used");
+    constructor(address _token, uint256 _pricePerMessagePerEpoch) Ownable2Step() {
+        if (_token == address(0)) revert OnlyERC20TokensAllowed();
         token = _token;
         pricePerMessagePerEpoch = _pricePerMessagePerEpoch;
     }

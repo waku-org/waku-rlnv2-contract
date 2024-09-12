@@ -4,11 +4,11 @@ pragma solidity 0.8.24;
 import { LazyIMT, LazyIMTData } from "@zk-kit/imt.sol/LazyIMT.sol";
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
 
-import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-import { Membership } from "./Membership.sol";
+import { MembershipUpgradeable } from "./Membership.sol";
 import { IPriceCalculator } from "./IPriceCalculator.sol";
 
 /// The tree is full
@@ -26,7 +26,7 @@ error InvalidUserMessageLimit(uint32 messageLimit);
 /// Invalid pagination query
 error InvalidPaginationQuery(uint256 startIndex, uint256 endIndex);
 
-contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Membership {
+contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, MembershipUpgradeable {
     /// @notice The Field
     uint256 public constant Q =
         21_888_242_871_839_275_222_246_405_745_257_275_088_548_364_400_416_034_343_698_204_186_575_808_495_617;
@@ -64,32 +64,27 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
     /// @param _maxTotalRateLimitPerEpoch Maximum total rate limit of all memberships in the tree
     /// @param _minRateLimitPerMembership Minimum rate limit of one membership
     /// @param _maxRateLimitPerMembership Maximum rate limit of one membership
-    /// @param _billingPeriod Membership billing period
+    /// @param _expirationTerm Membership expiration term
     /// @param _gracePeriod Membership grace period
     function initialize(
         address _priceCalculator,
         uint32 _maxTotalRateLimitPerEpoch,
         uint32 _minRateLimitPerMembership,
         uint32 _maxRateLimitPerMembership,
-        uint32 _billingPeriod,
+        uint32 _expirationTerm,
         uint32 _gracePeriod
     )
         public
         initializer
     {
-        require(_maxTotalRateLimitPerEpoch >= maxRateLimitPerMembership);
-        require(_maxRateLimitPerMembership > minRateLimitPerMembership);
-        require(_minRateLimitPerMembership > 0);
-        require(_billingPeriod > 0);
-
         __Ownable_init();
         __UUPSUpgradeable_init();
-        __Membership_init(
+        __MembershipUpgradeable_init(
             _priceCalculator,
             _maxTotalRateLimitPerEpoch,
             _minRateLimitPerMembership,
             _maxRateLimitPerMembership,
-            _billingPeriod,
+            _expirationTerm,
             _gracePeriod
         );
 
@@ -120,8 +115,8 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
     /// @return The metadata of the member (userMessageLimit, index, rateCommitment)
     function idCommitmentToMetadata(uint256 idCommitment) public view returns (uint32, uint32, uint256) {
         MembershipInfo memory member = members[idCommitment];
-        // we cannot call indexToCommitment if the member doesn't exist
-        if (member.holder == address(0)) {
+        // we cannot call indexToCommitment for 0 index if the member doesn't exist
+        if (member.userMessageLimit == 0) {
             return (0, 0, 0);
         }
         return (member.userMessageLimit, member.index, indexToCommitment(member.index));
@@ -165,6 +160,7 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
         for (uint256 i = 0; i < membershipsToErase.length; i++) {
             uint256 idCommitmentToErase = membershipsToErase[i];
             MembershipInfo memory mdetails = members[idCommitmentToErase];
+            if (mdetails.userMessageLimit == 0) revert InvalidIdCommitment(idCommitmentToErase);
             _eraseMembership(_msgSender(), idCommitmentToErase, mdetails);
             LazyIMT.update(imtData, 0, mdetails.index);
         }
@@ -248,6 +244,7 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
         for (uint256 i = 0; i < idCommitments.length; i++) {
             uint256 idCommitment = idCommitments[i];
             MembershipInfo memory mdetails = members[idCommitment];
+            if (mdetails.userMessageLimit == 0) revert InvalidIdCommitment(idCommitment);
             _eraseMembership(_msgSender(), idCommitment, mdetails);
             LazyIMT.update(imtData, 0, mdetails.index);
         }
@@ -288,7 +285,7 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
 
     /// @notice Set the membership expiration term
     /// @param _expirationTerm  new value
-    function setBillingPeriod(uint32 _expirationTerm) external onlyOwner {
+    function setExpirationTerm(uint32 _expirationTerm) external onlyOwner {
         require(_expirationTerm > 0);
         expirationTerm = _expirationTerm;
     }

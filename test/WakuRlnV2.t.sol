@@ -262,7 +262,7 @@ contract WakuRlnV2Test is Test {
 
         // Attempt to extend the membership (but now we are the owner)
         vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
-        emit Membership.MemberExtended(idCommitment, 0, 0, 0);
+        emit MembershipUpgradeable.MemberExtended(idCommitment, 0, 0, 0);
         w.extend(commitmentsToExtend);
 
         (,,, uint256 newGracePeriodStartDate,,,,,) = w.members(idCommitment);
@@ -325,7 +325,7 @@ contract WakuRlnV2Test is Test {
 
         // Extend the membership
         vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
-        emit Membership.MemberExtended(idCommitment, 0, 0, 0);
+        emit MembershipUpgradeable.MemberExtended(idCommitment, 0, 0, 0);
         w.extend(commitmentsToExtend);
 
         // Verify list order is correct
@@ -413,11 +413,11 @@ contract WakuRlnV2Test is Test {
         // Attempt to expire 3 commitments that can be erased
         commitmentsToErase[2] = 4;
         vm.expectEmit(true, false, false, false);
-        emit Membership.MemberExpired(1, 0, 0);
+        emit MembershipUpgradeable.MemberExpired(1, 0, 0);
         vm.expectEmit(true, false, false, false);
-        emit Membership.MemberExpired(2, 0, 0);
+        emit MembershipUpgradeable.MemberExpired(2, 0, 0);
         vm.expectEmit(true, false, false, false);
-        emit Membership.MemberExpired(4, 0, 0);
+        emit MembershipUpgradeable.MemberExpired(4, 0, 0);
         w.register(6, 60, commitmentsToErase);
 
         // Ensure that the chosen memberships were erased and others unaffected
@@ -518,7 +518,7 @@ contract WakuRlnV2Test is Test {
 
         // It should succeed now
         vm.expectEmit();
-        emit Membership.MemberExpired(1, userMessageLimitA, indexA);
+        emit MembershipUpgradeable.MemberExpired(1, userMessageLimitA, indexA);
         w.register(2, userMessageLimitB);
 
         // The previous expired membership should have been erased
@@ -579,9 +579,9 @@ contract WakuRlnV2Test is Test {
         (, uint256 priceB) = w.priceCalculator().calculate(4);
         token.approve(address(w), priceB);
         vm.expectEmit(true, false, false, false);
-        emit Membership.MemberExpired(1, 0, 0);
+        emit MembershipUpgradeable.MemberExpired(1, 0, 0);
         vm.expectEmit(true, false, false, false);
-        emit Membership.MemberExpired(2, 0, 0);
+        emit MembershipUpgradeable.MemberExpired(2, 0, 0);
         w.register(4, 4);
 
         // idCommitment4 will use the last removed index available (since we push to an array)
@@ -740,9 +740,9 @@ contract WakuRlnV2Test is Test {
         commitmentsToErase[1] = idCommitment + 2;
 
         vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
-        emit Membership.MemberExpired(commitmentsToErase[0], 0, 0);
+        emit MembershipUpgradeable.MemberExpired(commitmentsToErase[0], 0, 0);
         vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
-        emit Membership.MemberExpired(commitmentsToErase[0], 0, 0);
+        emit MembershipUpgradeable.MemberExpired(commitmentsToErase[0], 0, 0);
         w.eraseMemberships(commitmentsToErase);
 
         address holder;
@@ -803,7 +803,7 @@ contract WakuRlnV2Test is Test {
         for (uint256 i = 0; i < idCommitmentsLength; i++) {
             commitmentsToErase[i] = i + 1;
             vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
-            emit Membership.MemberExpired(i + 1, 0, 0);
+            emit MembershipUpgradeable.MemberExpired(i + 1, 0, 0);
         }
 
         w.eraseMemberships(commitmentsToErase);
@@ -898,7 +898,7 @@ contract WakuRlnV2Test is Test {
 
         /*| Name                | Type                                                | Slot | Offset | Bytes |
           |---------------------|-----------------------------------------------------|------|--------|-------|
-        | nextCommitmentIndex   | uint32                                              | 206  | 0      | 4     | */
+          | nextCommitmentIndex | uint32                                              | 256  | 0      | 4     | */
 
         /*
         Pro tip: to easily find the storage slot of a variable, without having to calculate the storage layout
@@ -917,7 +917,7 @@ contract WakuRlnV2Test is Test {
         */
 
         // we set nextCommitmentIndex to 4294967295 (1 << 20) = 0x00100000
-        vm.store(address(w), bytes32(uint256(206)), 0x0000000000000000000000000000000000000000000000000000000000100000);
+        vm.store(address(w), bytes32(uint256(256)), 0x0000000000000000000000000000000000000000000000000000000000100000);
         token.approve(address(w), price);
         vm.expectRevert(FullTree.selector);
         w.register(1, userMessageLimit);

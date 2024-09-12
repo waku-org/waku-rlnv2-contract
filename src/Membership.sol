@@ -4,9 +4,7 @@ pragma solidity 0.8.24;
 import { IPriceCalculator } from "./IPriceCalculator.sol";
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
-
-// An eth value was assigned in the transaction and only tokens were expected
-error OnlyTokensAccepted();
+import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 // The specified rate limit was not correct or within the expected limits
 error InvalidRateLimit();
@@ -24,7 +22,7 @@ error NotHolder(uint256 idCommitment);
 // This membership cannot be erased (either it is not expired or not in grace period and/or not the owner)
 error CantEraseMembership(uint256 idCommitment);
 
-contract Membership {
+abstract contract MembershipUpgradeable is Initializable {
     using SafeERC20 for IERC20;
 
     /// @notice Address of the Price Calculator used to calculate the price of a new membership
@@ -108,7 +106,7 @@ contract Membership {
     /// @param _maxRateLimitPerMembership Maximum rate limit of one membership
     /// @param _expirationTerm Membership expiration term
     /// @param _gracePeriod Membership grace period
-    function __Membership_init(
+    function __MembershipUpgradeable_init(
         address _priceCalculator,
         uint32 _maxTotalRateLimitPerEpoch,
         uint32 _minRateLimitPerMembership,
@@ -117,7 +115,34 @@ contract Membership {
         uint32 _gracePeriod
     )
         internal
+        onlyInitializing
     {
+        __MembershipUpgradeable_init_unchained(
+            _priceCalculator,
+            _maxTotalRateLimitPerEpoch,
+            _minRateLimitPerMembership,
+            _maxRateLimitPerMembership,
+            _expirationTerm,
+            _gracePeriod
+        );
+    }
+
+    function __MembershipUpgradeable_init_unchained(
+        address _priceCalculator,
+        uint32 _maxTotalRateLimitPerEpoch,
+        uint32 _minRateLimitPerMembership,
+        uint32 _maxRateLimitPerMembership,
+        uint32 _expirationTerm,
+        uint32 _gracePeriod
+    )
+        internal
+        onlyInitializing
+    {
+        require(_maxTotalRateLimitPerEpoch >= maxRateLimitPerMembership);
+        require(_maxRateLimitPerMembership > minRateLimitPerMembership);
+        require(_minRateLimitPerMembership > 0);
+        require(_expirationTerm > 0);
+
         priceCalculator = IPriceCalculator(_priceCalculator);
         maxTotalRateLimitPerEpoch = _maxTotalRateLimitPerEpoch;
         maxRateLimitPerMembership = _maxRateLimitPerMembership;
@@ -157,7 +182,6 @@ contract Membership {
     }
 
     function _transferFees(address _from, address _token, uint256 _amount) internal {
-        if (msg.value != 0) revert OnlyTokensAccepted();
         IERC20(_token).safeTransferFrom(_from, address(this), _amount);
     }
 
@@ -377,7 +401,7 @@ contract Membership {
 
         if (!membershipExpired && !isGracePeriodAndOwned) revert CantEraseMembership(_idCommitment);
 
-        emit MemberExpired(head, _mdetails.userMessageLimit, _mdetails.index);
+        emit MemberExpired(_idCommitment, _mdetails.userMessageLimit, _mdetails.index);
 
         // Move balance from expired membership to holder balance
         balancesToWithdraw[_mdetails.holder][_mdetails.token] += _mdetails.amount;
@@ -415,4 +439,11 @@ contract Membership {
         balancesToWithdraw[_sender][_token] = 0;
         IERC20(_token).safeTransfer(_sender, amount);
     }
+
+    /**
+     * @dev This empty reserved space is put in place to allow future versions to add new
+     * variables without shifting down storage in the inheritance chain.
+     * See https://docs.openzeppelin.com/contracts/4.x/upgradeable#storage_gaps
+     */
+    uint256[50] private __gap;
 }
