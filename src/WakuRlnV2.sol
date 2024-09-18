@@ -138,7 +138,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
 
         uint32 index;
         bool reusedIndex;
-        (index, reusedIndex) = _acquireMembership(_msgSender(), idCommitment, userMessageLimit, true);
+        (index, reusedIndex) = _acquireMembership(_msgSender(), idCommitment, userMessageLimit);
 
         _register(idCommitment, userMessageLimit, index, reusedIndex);
     }
@@ -167,7 +167,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
 
         uint32 index;
         bool reusedIndex;
-        (index, reusedIndex) = _acquireMembership(_msgSender(), idCommitment, userMessageLimit, false);
+        (index, reusedIndex) = _acquireMembership(_msgSender(), idCommitment, userMessageLimit);
 
         _register(idCommitment, userMessageLimit, index, reusedIndex);
     }

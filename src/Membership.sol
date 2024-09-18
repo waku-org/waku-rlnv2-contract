@@ -58,17 +58,7 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @notice track available indices that are available due to expired memberships being removed
     uint32[] public availableExpiredIndices;
 
-    /// @dev Oldest membership
-    uint256 public head = 0;
-
-    /// @dev Newest membership
-    uint256 public tail = 0;
-
     struct MembershipInfo {
-        /// @notice idCommitment of the previous membership
-        uint256 prev;
-        /// @notice idCommitment of the next membership
-        uint256 next;
         /// @notice amount of the token used to acquire this membership
         uint256 amount;
         /// @notice timestamp of when the grace period starts for this membership
@@ -163,21 +153,18 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @param _sender address of the owner of the new membership
     /// @param _idCommitment the idcommitment of the new membership
     /// @param _rateLimit the user message limit
-    /// @param _eraseIfNeeded Erase expired memberships if the `_rateLimit` exceeds the available rate limit
     /// @return index the index in the merkle tree
     /// @return reusedIndex indicates whether a new leaf is being used or if using an existing leaf in the merkle tree
     function _acquireMembership(
         address _sender,
         uint256 _idCommitment,
-        uint32 _rateLimit,
-        bool _eraseIfNeeded
+        uint32 _rateLimit
     )
         internal
         returns (uint32 index, bool reusedIndex)
     {
         (address token, uint256 amount) = priceCalculator.calculate(_rateLimit);
-        (index, reusedIndex) =
-            _setupMembershipDetails(_sender, _idCommitment, _rateLimit, token, amount, _eraseIfNeeded);
+        (index, reusedIndex) = _setupMembershipDetails(_sender, _idCommitment, _rateLimit, token, amount);
         _transferFees(_sender, token, amount);
     }
 
@@ -193,7 +180,6 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @param _rateLimit User message limit
     /// @param _token Address of the token used to acquire the membership
     /// @param _amount Amount of the token used to acquire the membership
-    /// @param _eraseIfNeeded Erase expired memberships if the `_rateLimit` exceeds the available rate limit
     /// @return index membership index on the merkle tree
     /// @return reusedIndex indicates whether the index returned was a reused slot on the tree or not
     function _setupMembershipDetails(
@@ -201,8 +187,7 @@ abstract contract MembershipUpgradeable is Initializable {
         uint256 _idCommitment,
         uint32 _rateLimit,
         address _token,
-        uint256 _amount,
-        bool _eraseIfNeeded
+        uint256 _amount
     )
         internal
         returns (uint32 index, bool reusedIndex)
@@ -211,66 +196,15 @@ abstract contract MembershipUpgradeable is Initializable {
             revert InvalidRateLimit();
         }
 
-        // Storing in local variable to not access the storage frequently
-        // And we're using/modifying these variables in each iteration
-        uint256 _head = head;
-        uint256 _tail = tail;
-        uint256 _totalRateLimitPerEpoch = totalRateLimitPerEpoch;
-        uint32 _maxTotalRateLimitPerEpoch = maxTotalRateLimitPerEpoch;
-
         // Determine if we exceed the total rate limit
-        if (_totalRateLimitPerEpoch + _rateLimit > _maxTotalRateLimitPerEpoch) {
-            if (_head == 0 || !_eraseIfNeeded) revert ExceedAvailableMaxRateLimitPerEpoch(); // List is empty or can't
-                // erase memberships automatically
-
-            // Attempt to free expired membership slots
-            while (_totalRateLimitPerEpoch + _rateLimit > _maxTotalRateLimitPerEpoch && _head != 0) {
-                // Determine if there are any available spot in the membership map
-                // by looking at the oldest membership. If it's expired, we can free it
-                MembershipInfo memory oldestMembership = members[_head];
-                if (!_isExpired(oldestMembership.gracePeriodStartDate, oldestMembership.gracePeriod)) {
-                    revert ExceedAvailableMaxRateLimitPerEpoch();
-                }
-
-                emit MemberExpired(_head, oldestMembership.userMessageLimit, oldestMembership.index);
-
-                // Deduct the expired membership rate limit
-                _totalRateLimitPerEpoch -= oldestMembership.userMessageLimit;
-
-                // Remove the element from the list
-                delete members[_head];
-
-                // Promote the next oldest membership to oldest
-                _head = oldestMembership.next;
-
-                // Move balance from expired membership to holder balance
-                balancesToWithdraw[oldestMembership.holder][oldestMembership.token] += oldestMembership.amount;
-
-                availableExpiredIndices.push(oldestMembership.index);
-            }
-
-            // Ensure new head and tail are pointing to the correct memberships
-            if (_head != 0) {
-                members[_head].prev = 0;
-            } else {
-                _tail = 0;
-            }
+        totalRateLimitPerEpoch += _rateLimit;
+        if (totalRateLimitPerEpoch > maxTotalRateLimitPerEpoch) {
+            revert ExceedAvailableMaxRateLimitPerEpoch(); // List is empty or can't
         }
-
-        if (_tail != 0) {
-            members[_tail].next = _idCommitment;
-        } else {
-            // First item
-            _head = _idCommitment;
-        }
-
-        // Adding the rate limit of the new registration
-        _totalRateLimitPerEpoch += _rateLimit;
 
         // Reuse available slots from previously removed expired memberships
         (index, reusedIndex) = _nextIndex();
 
-        totalRateLimitPerEpoch = _totalRateLimitPerEpoch;
         members[_idCommitment] = MembershipInfo({
             holder: _sender,
             gracePeriodStartDate: block.timestamp + uint256(expirationTerm),
@@ -278,12 +212,8 @@ abstract contract MembershipUpgradeable is Initializable {
             token: _token,
             amount: _amount,
             userMessageLimit: _rateLimit,
-            next: 0, // It's the newest value, so point to nowhere
-            prev: _tail,
             index: index
         });
-        head = _head;
-        tail = _idCommitment;
     }
 
     /// @dev reuse available slots from previously removed expired memberships
@@ -315,41 +245,8 @@ abstract contract MembershipUpgradeable is Initializable {
 
         uint256 gracePeriodStartDate = block.timestamp + uint256(expirationTerm);
 
-        uint256 next = mdetails.next;
-        uint256 prev = mdetails.prev;
-        uint256 _tail = tail;
-        uint256 _head = head;
-
-        // Remove current membership references
-        if (prev != 0) {
-            members[prev].next = next;
-        } else {
-            _head = next;
-        }
-
-        if (next != 0) {
-            members[next].prev = prev;
-        } else {
-            _tail = prev;
-        }
-
-        // Move membership to the end (since it will be the newest)
-        mdetails.next = 0;
-        mdetails.prev = _tail;
         mdetails.gracePeriodStartDate = gracePeriodStartDate;
         mdetails.gracePeriod = gracePeriod;
-
-        // Link previous tail with membership that was just extended
-        if (_tail != 0) {
-            members[_tail].next = _idCommitment;
-        } else {
-            // There are no other items in the list.
-            // The head will become the extended commitment
-            _head = _idCommitment;
-        }
-
-        head = _head;
-        tail = _idCommitment;
 
         emit MemberExtended(_idCommitment, mdetails.userMessageLimit, mdetails.index, gracePeriodStartDate);
     }
@@ -408,19 +305,6 @@ abstract contract MembershipUpgradeable is Initializable {
 
         // Deduct the expired membership rate limit
         totalRateLimitPerEpoch -= _mdetails.userMessageLimit;
-
-        // Remove current membership references
-        if (_mdetails.prev != 0) {
-            members[_mdetails.prev].next = _mdetails.next;
-        } else {
-            head = _mdetails.next;
-        }
-
-        if (_mdetails.next != 0) {
-            members[_mdetails.next].prev = _mdetails.prev;
-        } else {
-            tail = _mdetails.prev;
-        }
 
         availableExpiredIndices.push(_mdetails.index);
 
