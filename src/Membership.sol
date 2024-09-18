@@ -6,21 +6,24 @@ import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol"
 import { SafeERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
-// The specified rate limit was not correct or within the expected limits
-error InvalidRateLimit();
+// The rate limit is outside the expected limits
+error InvalidMembershipRateLimit();
 
-// It's not possible to acquire the rate limit due to exceeding the expected limits
+// Cannot acquire the rate limit for a new membership due to exceeding the expected limits
 // even after attempting to erase expired memberships
-error ExceedAvailableMaxRateLimitPerEpoch();
+error ExceededMaxTotalRateLimit();
 
-// This membership is not in grace period yet
+// This membership is not in its grace period
 error NotInGracePeriod(uint256 idCommitment);
 
-// The sender is not the holder of the membership
-error NotHolder(uint256 idCommitment);
+// The sender is not the holder of this membership
+error AttemptedExtensionByNonHolder(uint256 idCommitment);
 
-// This membership cannot be erased (either it is not expired or not in grace period and/or not the owner)
-error CantEraseMembership(uint256 idCommitment);
+// This membership cannot be erased
+error CannotEraseMembership(uint256 idCommitment);
+
+// This membership does not exist
+error MembershipDoesNotExist(uint256 idCommitment);
 
 abstract contract MembershipUpgradeable is Initializable {
     using SafeERC20 for IERC20;
@@ -28,415 +31,318 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @notice Address of the Price Calculator used to calculate the price of a new membership
     IPriceCalculator public priceCalculator;
 
-    /// @notice Maximum total rate limit of all memberships in the tree
-    uint32 public maxTotalRateLimitPerEpoch;
+    /// @notice Maximum total rate limit of all memberships in the membership set (messages per epoch)
+    uint32 public maxTotalRateLimit;
 
     /// @notice Maximum rate limit of one membership
-    uint32 public maxRateLimitPerMembership;
+    uint32 public maxMembershipRateLimit;
 
     /// @notice Minimum rate limit of one membership
-    uint32 public minRateLimitPerMembership;
+    uint32 public minMembershipRateLimit;
 
-    /// @notice Membership billing period
-    uint32 public expirationTerm;
+    /// @notice Membership active period duration (A in the spec)
+    uint32 public activeDurationForNewMemberships;
 
-    /// @notice Membership grace period
-    uint32 public gracePeriod;
+    /// @notice Membership grace period duration (G in the spec)
+    uint32 public gracePeriodDurationForNewMemberships;
 
-    /// @notice balances available to withdraw
-    mapping(address holder => mapping(address token => uint256 balance)) public balancesToWithdraw;
+    /// @notice Deposits available for withdrawal
+    /// Note: amount of deposits unavailable for withdrawal are stored in MembershipInfo elements.
+    mapping(address holder => mapping(address token => uint256 balance)) public depositsToWithdraw;
 
-    /// @notice Total rate limit of all memberships in the tree
-    uint256 public totalRateLimitPerEpoch;
+    /// @notice Current total rate limit of all memberships in the membership set (messages per epoch)
+    uint256 public currentTotalRateLimit;
 
-    /// @notice List of registered memberships
-    mapping(uint256 idCommitment => MembershipInfo member) public members;
+    /// @notice List of memberships in the membership set
+    mapping(uint256 idCommitment => MembershipInfo membership) public memberships;
 
-    /// @notice The index on the merkle tree for the next member to be registered
-    uint32 public nextCommitmentIndex;
+    /// @notice The index in the membership set for the next membership to be registered
+    uint32 public nextFreeIndex;
 
-    /// @notice track available indices that are available due to expired memberships being removed
-    uint32[] public availableExpiredIndices;
-
-    /// @dev Oldest membership
-    uint256 public head = 0;
-
-    /// @dev Newest membership
-    uint256 public tail = 0;
+    /// @notice Indices of erased memberships that can be reused for new registrations
+    uint32[] public indicesOfLazilyErasedMemberships;
 
     struct MembershipInfo {
-        /// @notice idCommitment of the previous membership
-        uint256 prev;
-        /// @notice idCommitment of the next membership
-        uint256 next;
-        /// @notice amount of the token used to acquire this membership
-        uint256 amount;
-        /// @notice timestamp of when the grace period starts for this membership
-        uint256 gracePeriodStartDate;
-        /// @notice duration of the grace period
-        uint32 gracePeriod;
-        /// @notice the user message limit of each member
-        uint32 userMessageLimit;
-        /// @notice the index of the member in the set
+        /// @notice the deposit amount (in tokens) to register this membership
+        uint256 depositAmount;
+        /// @notice the duration of the active period of this membership
+        uint32 activeDuration;
+        /// @notice the start of the grace period (= the end of the active period)
+        uint256 gracePeriodStartTimestamp;
+        /// @notice the duration of the grace period of this membership
+        uint32 gracePeriodDuration;
+        /// @notice the membership rate limit
+        uint32 rateLimit;
+        /// @notice the index of the membership in the membership set
         uint32 index;
-        /// @notice address of the owner of this membership
+        /// @notice the address of the holder of this membership
         address holder;
-        /// @notice token used to acquire this membership
+        /// @notice the token used to make the deposit to register this membership
         address token;
     }
 
-    /// @notice Emitted when a membership is erased due to having exceeded the grace period or the owner having chosen
-    /// to not extend it
-    /// @param idCommitment the idCommitment of the member
-    /// @param userMessageLimit the rate limit of this membership
-    /// @param index the index of the membership in the merkle tree
-    event MemberExpired(uint256 idCommitment, uint32 userMessageLimit, uint32 index);
+    /// Emitted when a new membership is added to the membership set
+    /// @param idCommitment the idCommitment of the membership
+    /// @param membershipRateLimit the rate limit of this membership
+    /// @param index The index of the membership in the membership set
+    event MembershipRegistered(uint256 idCommitment, uint256 membershipRateLimit, uint32 index);
 
-    /// @notice Emitted when a membership in grace period is extended
-    /// @param idCommitment the idCommitment of the member
-    /// @param userMessageLimit the rate limit of this membership
-    /// @param index the index of the membership in the merkle tree
-    /// @param newExpirationDate the new expiration date of this membership
-    event MemberExtended(uint256 idCommitment, uint32 userMessageLimit, uint32 index, uint256 newExpirationDate);
+    /// @notice Emitted when a membership is expired (exceeded its grace period and not extended)
+    /// @param idCommitment the idCommitment of the membership
+    /// @param membershipRateLimit the rate limit of this membership
+    /// @param index the index of the membership in the membership set
+    event MembershipExpired(uint256 idCommitment, uint32 membershipRateLimit, uint32 index);
+
+    /// @notice Emitted when a membership is erased by its holder during grace period
+    /// @param idCommitment the idCommitment of the membership
+    /// @param membershipRateLimit the rate limit of this membership
+    /// @param index the index of the membership in the membership set
+    event MembershipErased(uint256 idCommitment, uint32 membershipRateLimit, uint32 index);
+
+    /// @notice Emitted when a membership in its grace period is extended (i.e., is back to Active state)
+    /// @param idCommitment the idCommitment of the membership
+    /// @param membershipRateLimit the rate limit of this membership
+    /// @param index the index of the membership in the membership set
+    /// @param newGracePeriodStartTimestamp the new grace period start timestamp of this membership
+    event MembershipExtended(
+        uint256 idCommitment, uint32 membershipRateLimit, uint32 index, uint256 newGracePeriodStartTimestamp
+    );
 
     /// @dev contract initializer
     /// @param _priceCalculator Address of an instance of IPriceCalculator
-    /// @param _maxTotalRateLimitPerEpoch Maximum total rate limit of all memberships in the tree
-    /// @param _minRateLimitPerMembership Minimum rate limit of one membership
-    /// @param _maxRateLimitPerMembership Maximum rate limit of one membership
-    /// @param _expirationTerm Membership expiration term
-    /// @param _gracePeriod Membership grace period
+    /// @param _maxTotalRateLimit Maximum total rate limit of all memberships in the membership set
+    /// @param _minMembershipRateLimit Minimum rate limit of each membership
+    /// @param _maxMembershipRateLimit Maximum rate limit of each membership
+    /// @param _activeDurationForNewMemberships Active state duration of each membership
+    /// @param _gracePeriodDurationForNewMemberships Grace period duration of each membership
     function __MembershipUpgradeable_init(
         address _priceCalculator,
-        uint32 _maxTotalRateLimitPerEpoch,
-        uint32 _minRateLimitPerMembership,
-        uint32 _maxRateLimitPerMembership,
-        uint32 _expirationTerm,
-        uint32 _gracePeriod
+        uint32 _maxTotalRateLimit,
+        uint32 _minMembershipRateLimit,
+        uint32 _maxMembershipRateLimit,
+        uint32 _activeDurationForNewMemberships,
+        uint32 _gracePeriodDurationForNewMemberships
     )
         internal
         onlyInitializing
     {
         __MembershipUpgradeable_init_unchained(
             _priceCalculator,
-            _maxTotalRateLimitPerEpoch,
-            _minRateLimitPerMembership,
-            _maxRateLimitPerMembership,
-            _expirationTerm,
-            _gracePeriod
+            _maxTotalRateLimit,
+            _minMembershipRateLimit,
+            _maxMembershipRateLimit,
+            _activeDurationForNewMemberships,
+            _gracePeriodDurationForNewMemberships
         );
     }
 
     function __MembershipUpgradeable_init_unchained(
         address _priceCalculator,
-        uint32 _maxTotalRateLimitPerEpoch,
-        uint32 _minRateLimitPerMembership,
-        uint32 _maxRateLimitPerMembership,
-        uint32 _expirationTerm,
-        uint32 _gracePeriod
+        uint32 _maxTotalRateLimit,
+        uint32 _minMembershipRateLimit,
+        uint32 _maxMembershipRateLimit,
+        uint32 _activeDurationForNewMemberships,
+        uint32 _gracePeriodDurationForNewMemberships
     )
         internal
         onlyInitializing
     {
-        require(_maxTotalRateLimitPerEpoch >= maxRateLimitPerMembership);
-        require(_maxRateLimitPerMembership > minRateLimitPerMembership);
-        require(_minRateLimitPerMembership > 0);
-        require(_expirationTerm > 0);
+        require(0 < _minMembershipRateLimit);
+        require(_minMembershipRateLimit <= _maxMembershipRateLimit);
+        require(_maxMembershipRateLimit <= _maxTotalRateLimit);
+        require(_activeDurationForNewMemberships > 0);
+        // Note: grace period duration may be equal to zero
 
         priceCalculator = IPriceCalculator(_priceCalculator);
-        maxTotalRateLimitPerEpoch = _maxTotalRateLimitPerEpoch;
-        maxRateLimitPerMembership = _maxRateLimitPerMembership;
-        minRateLimitPerMembership = _minRateLimitPerMembership;
-        expirationTerm = _expirationTerm;
-        gracePeriod = _gracePeriod;
+        maxTotalRateLimit = _maxTotalRateLimit;
+        minMembershipRateLimit = _minMembershipRateLimit;
+        maxMembershipRateLimit = _maxMembershipRateLimit;
+        activeDurationForNewMemberships = _activeDurationForNewMemberships;
+        gracePeriodDurationForNewMemberships = _gracePeriodDurationForNewMemberships;
     }
 
-    /// @notice Checks if a user message limit is valid. This does not take into account whether we the total
-    /// memberships have reached already the `maxTotalRateLimitPerEpoch`
-    /// @param userMessageLimit The user message limit
-    /// @return true if the user message limit is valid, false otherwise
-    function isValidUserMessageLimit(uint32 userMessageLimit) external view returns (bool) {
-        return userMessageLimit >= minRateLimitPerMembership && userMessageLimit <= maxRateLimitPerMembership;
-    }
-
-    /// @dev acquire a membership and trasnfer the fees to the contract
-    /// @param _sender address of the owner of the new membership
-    /// @param _idCommitment the idcommitment of the new membership
-    /// @param _rateLimit the user message limit
-    /// @param _eraseIfNeeded Erase expired memberships if the `_rateLimit` exceeds the available rate limit
-    /// @return index the index in the merkle tree
-    /// @return reusedIndex indicates whether a new leaf is being used or if using an existing leaf in the merkle tree
+    /// @dev acquire a membership and trasnfer the deposit to the contract
+    /// @param _sender the address of the transaction sender
+    /// @param _idCommitment the idCommitment of the new membership
+    /// @param _rateLimit the membership rate limit
+    /// @return index the index of the new membership in the membership set
+    /// @return indexReused true if the index was reused, false otherwise
     function _acquireMembership(
         address _sender,
         uint256 _idCommitment,
-        uint32 _rateLimit,
-        bool _eraseIfNeeded
+        uint32 _rateLimit
     )
         internal
-        returns (uint32 index, bool reusedIndex)
+        returns (uint32 index, bool indexReused)
     {
-        (address token, uint256 amount) = priceCalculator.calculate(_rateLimit);
-        (index, reusedIndex) =
-            _setupMembershipDetails(_sender, _idCommitment, _rateLimit, token, amount, _eraseIfNeeded);
-        _transferFees(_sender, token, amount);
-    }
-
-    function _transferFees(address _from, address _token, uint256 _amount) internal {
-        IERC20(_token).safeTransferFrom(_from, address(this), _amount);
-    }
-
-    /// @dev Setup a new membership. If there are not enough remaining rate limit to acquire
-    /// a new membership, it will attempt to erase existing memberships and reuse one of the
-    /// slots helds by the membership
-    /// @param _sender holder of the membership. Generally `msg.sender`
-    /// @param _idCommitment IDCommitment
-    /// @param _rateLimit User message limit
-    /// @param _token Address of the token used to acquire the membership
-    /// @param _amount Amount of the token used to acquire the membership
-    /// @param _eraseIfNeeded Erase expired memberships if the `_rateLimit` exceeds the available rate limit
-    /// @return index membership index on the merkle tree
-    /// @return reusedIndex indicates whether the index returned was a reused slot on the tree or not
-    function _setupMembershipDetails(
-        address _sender,
-        uint256 _idCommitment,
-        uint32 _rateLimit,
-        address _token,
-        uint256 _amount,
-        bool _eraseIfNeeded
-    )
-        internal
-        returns (uint32 index, bool reusedIndex)
-    {
-        if (_rateLimit < minRateLimitPerMembership || _rateLimit > maxRateLimitPerMembership) {
-            revert InvalidRateLimit();
+        // Check if the rate limit is valid
+        if (!isValidMembershipRateLimit(_rateLimit)) {
+            revert InvalidMembershipRateLimit();
         }
 
-        // Storing in local variable to not access the storage frequently
-        // And we're using/modifying these variables in each iteration
-        uint256 _head = head;
-        uint256 _tail = tail;
-        uint256 _totalRateLimitPerEpoch = totalRateLimitPerEpoch;
-        uint32 _maxTotalRateLimitPerEpoch = maxTotalRateLimitPerEpoch;
+        currentTotalRateLimit += _rateLimit;
 
         // Determine if we exceed the total rate limit
-        if (_totalRateLimitPerEpoch + _rateLimit > _maxTotalRateLimitPerEpoch) {
-            if (_head == 0 || !_eraseIfNeeded) revert ExceedAvailableMaxRateLimitPerEpoch(); // List is empty or can't
-                // erase memberships automatically
-
-            // Attempt to free expired membership slots
-            while (_totalRateLimitPerEpoch + _rateLimit > _maxTotalRateLimitPerEpoch && _head != 0) {
-                // Determine if there are any available spot in the membership map
-                // by looking at the oldest membership. If it's expired, we can free it
-                MembershipInfo memory oldestMembership = members[_head];
-                if (!_isExpired(oldestMembership.gracePeriodStartDate, oldestMembership.gracePeriod)) {
-                    revert ExceedAvailableMaxRateLimitPerEpoch();
-                }
-
-                emit MemberExpired(_head, oldestMembership.userMessageLimit, oldestMembership.index);
-
-                // Deduct the expired membership rate limit
-                _totalRateLimitPerEpoch -= oldestMembership.userMessageLimit;
-
-                // Remove the element from the list
-                delete members[_head];
-
-                // Promote the next oldest membership to oldest
-                _head = oldestMembership.next;
-
-                // Move balance from expired membership to holder balance
-                balancesToWithdraw[oldestMembership.holder][oldestMembership.token] += oldestMembership.amount;
-
-                availableExpiredIndices.push(oldestMembership.index);
-            }
-
-            // Ensure new head and tail are pointing to the correct memberships
-            if (_head != 0) {
-                members[_head].prev = 0;
-            } else {
-                _tail = 0;
-            }
+        if (currentTotalRateLimit > maxTotalRateLimit) {
+            revert ExceededMaxTotalRateLimit();
         }
 
-        if (_tail != 0) {
-            members[_tail].next = _idCommitment;
-        } else {
-            // First item
-            _head = _idCommitment;
-        }
+        (address token, uint256 depositAmount) = priceCalculator.calculate(_rateLimit);
 
-        // Adding the rate limit of the new registration
-        _totalRateLimitPerEpoch += _rateLimit;
+        // Possibly reuse an index of an erased membership
+        (index, indexReused) = _getFreeIndex();
 
-        // Reuse available slots from previously removed expired memberships
-        (index, reusedIndex) = _nextIndex();
-
-        totalRateLimitPerEpoch = _totalRateLimitPerEpoch;
-        members[_idCommitment] = MembershipInfo({
+        memberships[_idCommitment] = MembershipInfo({
             holder: _sender,
-            gracePeriodStartDate: block.timestamp + uint256(expirationTerm),
-            gracePeriod: gracePeriod,
-            token: _token,
-            amount: _amount,
-            userMessageLimit: _rateLimit,
-            next: 0, // It's the newest value, so point to nowhere
-            prev: _tail,
+            activeDuration: activeDurationForNewMemberships,
+            gracePeriodStartTimestamp: block.timestamp + uint256(activeDurationForNewMemberships),
+            gracePeriodDuration: gracePeriodDurationForNewMemberships,
+            token: token,
+            depositAmount: depositAmount,
+            rateLimit: _rateLimit,
             index: index
         });
-        head = _head;
-        tail = _idCommitment;
+
+        IERC20(token).safeTransferFrom(_sender, address(this), depositAmount);
     }
 
-    /// @dev reuse available slots from previously removed expired memberships
-    /// @return index index to use
-    /// @return reusedIndex indicates whether it is reusing an existing index, or using a new one
-    function _nextIndex() internal returns (uint32 index, bool reusedIndex) {
-        // Reuse available slots from previously removed expired memberships
-        uint256 arrLen = availableExpiredIndices.length;
-        if (arrLen != 0) {
-            index = availableExpiredIndices[arrLen - 1];
-            availableExpiredIndices.pop();
-            reusedIndex = true;
+    /// @notice Checks if a rate limit is within the allowed bounds
+    /// @param rateLimit The rate limit
+    /// @return true if the rate limit is within the allowed bounds, false otherwise
+    function isValidMembershipRateLimit(uint32 rateLimit) public view returns (bool) {
+        return minMembershipRateLimit <= rateLimit && rateLimit <= maxMembershipRateLimit;
+    }
+
+    /// @dev Get a free index (possibly reuse an index of an erased membership)
+    /// @return index index to be used for the new membership registration
+    /// @return indexReused indicates whether the index was reused from an erased membership
+    function _getFreeIndex() internal returns (uint32 index, bool indexReused) {
+        uint256 numIndices = indicesOfLazilyErasedMemberships.length;
+        if (numIndices != 0) {
+            // Reuse the index of the latest erased membership
+            index = indicesOfLazilyErasedMemberships[numIndices - 1];
+            indicesOfLazilyErasedMemberships.pop();
+            indexReused = true;
         } else {
-            index = nextCommitmentIndex;
+            index = nextFreeIndex;
         }
     }
 
-    /// @dev Extend a membership expiration date. Membership must be on grace period
-    /// @param _sender the address of the holder of the membership
+    /// @dev Extend a grace-period membership
+    /// @param _sender the address of the transaction sender
     /// @param _idCommitment the idCommitment of the membership
     function _extendMembership(address _sender, uint256 _idCommitment) public {
-        MembershipInfo storage mdetails = members[_idCommitment];
+        MembershipInfo storage membership = memberships[_idCommitment];
 
-        if (!_isGracePeriod(mdetails.gracePeriodStartDate, mdetails.gracePeriod)) {
+        if (!_isInPeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration)) {
             revert NotInGracePeriod(_idCommitment);
         }
 
-        if (_sender != mdetails.holder) revert NotHolder(_idCommitment);
+        if (_sender != membership.holder) revert AttemptedExtensionByNonHolder(_idCommitment);
 
-        uint256 gracePeriodStartDate = block.timestamp + uint256(expirationTerm);
+        // Note: we add the new active period to the end of the ongoing grace period
+        uint256 newGracePeriodStartTimestamp =
+            membership.gracePeriodStartTimestamp + membership.gracePeriodDuration + uint256(membership.activeDuration);
 
-        uint256 next = mdetails.next;
-        uint256 prev = mdetails.prev;
-        uint256 _tail = tail;
-        uint256 _head = head;
+        membership.gracePeriodStartTimestamp = newGracePeriodStartTimestamp;
 
-        // Remove current membership references
-        if (prev != 0) {
-            members[prev].next = next;
-        } else {
-            _head = next;
-        }
-
-        if (next != 0) {
-            members[next].prev = prev;
-        } else {
-            _tail = prev;
-        }
-
-        // Move membership to the end (since it will be the newest)
-        mdetails.next = 0;
-        mdetails.prev = _tail;
-        mdetails.gracePeriodStartDate = gracePeriodStartDate;
-        mdetails.gracePeriod = gracePeriod;
-
-        // Link previous tail with membership that was just extended
-        if (_tail != 0) {
-            members[_tail].next = _idCommitment;
-        } else {
-            // There are no other items in the list.
-            // The head will become the extended commitment
-            _head = _idCommitment;
-        }
-
-        head = _head;
-        tail = _idCommitment;
-
-        emit MemberExtended(_idCommitment, mdetails.userMessageLimit, mdetails.index, gracePeriodStartDate);
+        emit MembershipExtended(
+            _idCommitment, membership.rateLimit, membership.index, membership.gracePeriodStartTimestamp
+        );
     }
 
-    /// @dev Determine whether a timestamp is considered to be expired or not after exceeding the grace period
-    /// @param _gracePeriodStartDate timestamp in which the grace period starts
-    /// @param _gracePeriod duration of the grace period
-    function _isExpired(uint256 _gracePeriodStartDate, uint32 _gracePeriod) internal view returns (bool) {
-        return block.timestamp > _gracePeriodStartDate + uint256(_gracePeriod);
+    /// @dev Erase expired memberships or owned grace-period memberships.
+    /// @param _sender the address of the transaction sender
+    /// @param _idCommitment idCommitment of the membership to erase
+    function _eraseMembershipLazily(address _sender, uint256 _idCommitment) internal returns (uint32 index) {
+        MembershipInfo memory membership = memberships[_idCommitment];
+
+        if (membership.rateLimit == 0) revert MembershipDoesNotExist(_idCommitment);
+
+        bool membershipExpired = _isAfterPeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
+        bool membershipIsInGracePeriod =
+            _isInPeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
+        bool isHolder = (membership.holder == _sender);
+
+        if (!membershipExpired && !(membershipIsInGracePeriod && isHolder)) {
+            revert CannotEraseMembership(_idCommitment);
+        }
+
+        // Move deposit balance from the membership to be erased to holder deposit balance
+        depositsToWithdraw[membership.holder][membership.token] += membership.depositAmount;
+
+        // Deduct the rate limit of this membership from the total rate limit
+        currentTotalRateLimit -= membership.rateLimit;
+
+        // Mark this membership as reusable
+        indicesOfLazilyErasedMemberships.push(membership.index);
+
+        // Erase this membership from the memberships mapping
+        delete memberships[_idCommitment];
+
+        if (membershipExpired) {
+            emit MembershipExpired(_idCommitment, membership.rateLimit, membership.index);
+        }
+        emit MembershipErased(_idCommitment, membership.rateLimit, membership.index);
+
+        // This index will be used to erase the data from the Merkle tree that represents the membership set
+        return membership.index;
     }
 
-    /// @notice Determine if a membership is expired (has exceeded the grace period)
+    /// @notice Determine if a membership is in its grace period
+    /// @param _idCommitment the idCommitment of the membership
+    function isInGracePeriod(uint256 _idCommitment) public view returns (bool) {
+        MembershipInfo memory membership = memberships[_idCommitment];
+        return _isInPeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
+    }
+
+    /// @dev Determine whether the current timestamp is within a given period
+    /// @param _start timestamp in which the period starts (inclusive)
+    /// @param _duration duration of the period (end timestamp exclusive)
+    function _isInPeriod(uint256 _start, uint32 _duration) internal view returns (bool) {
+        uint256 timeNow = block.timestamp;
+        return (_start <= timeNow && timeNow < _start + uint256(_duration));
+    }
+
+    /// @notice Determine if a membership is expired
     /// @param _idCommitment the idCommitment of the membership
     function isExpired(uint256 _idCommitment) public view returns (bool) {
-        MembershipInfo memory m = members[_idCommitment];
-        return _isExpired(m.gracePeriodStartDate, m.gracePeriod);
+        MembershipInfo memory membership = memberships[_idCommitment];
+        return _isAfterPeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
     }
 
-    /// @notice Returns the timestamp on which a membership can be considered expired
+    /// @dev Determine whether the current timestamp is after a given period
+    /// @param _start timestamp in which the period starts (inclusive)
+    /// @param _duration duration of the period (end timestamp exclusive)
+    function _isAfterPeriod(uint256 _start, uint32 _duration) internal view returns (bool) {
+        uint256 timeNow = block.timestamp;
+        return (_timestampAfterPeriod(_start, _duration) <= timeNow);
+    }
+
+    /// @notice Returns the timestamp on which a membership can be considered expired (i.e. when its grace period ends)
     /// @param _idCommitment the idCommitment of the membership
-    function expirationDate(uint256 _idCommitment) public view returns (uint256) {
-        MembershipInfo memory m = members[_idCommitment];
-        return m.gracePeriodStartDate + uint256(m.gracePeriod) + 1;
+    function membershipExpirationTimestamp(uint256 _idCommitment) public view returns (uint256) {
+        MembershipInfo memory membership = memberships[_idCommitment];
+        return _timestampAfterPeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
     }
 
-    /// @dev Determine whether a timestamp is considered to be in grace period or not
-    /// @param _gracePeriodStartDate timestamp in which the grace period starts
-    /// @param _gracePeriod duration of the grace period
-    function _isGracePeriod(uint256 _gracePeriodStartDate, uint32 _gracePeriod) internal view returns (bool) {
-        uint256 blockTimestamp = block.timestamp;
-        return
-            blockTimestamp >= _gracePeriodStartDate && blockTimestamp <= _gracePeriodStartDate + uint256(_gracePeriod);
+    /// @dev Returns the first timestamp after a specified period
+    /// @param _start timestamp in which the period starts (inclusive)
+    /// @param _duration duration of the period (exclusive)
+    function _timestampAfterPeriod(uint256 _start, uint32 _duration) internal pure returns (uint256) {
+        return _start + uint256(_duration);
     }
 
-    /// @notice Determine if a membership is in grace period
-    /// @param _idCommitment the idCommitment of the membership
-    function isGracePeriod(uint256 _idCommitment) public view returns (bool) {
-        MembershipInfo memory m = members[_idCommitment];
-        return _isGracePeriod(m.gracePeriodStartDate, m.gracePeriod);
-    }
-
-    /// @dev Remove expired memberships or owned memberships in grace period.
-    /// @param _sender address of the sender of transaction (will be used to check memberships in grace period)
-    /// @param _idCommitment IDCommitment of the membership to erase
-    function _eraseMembership(address _sender, uint256 _idCommitment, MembershipInfo memory _mdetails) internal {
-        bool membershipExpired = _isExpired(_mdetails.gracePeriodStartDate, _mdetails.gracePeriod);
-        bool isGracePeriodAndOwned =
-            _isGracePeriod(_mdetails.gracePeriodStartDate, _mdetails.gracePeriod) && _mdetails.holder == _sender;
-
-        if (!membershipExpired && !isGracePeriodAndOwned) revert CantEraseMembership(_idCommitment);
-
-        emit MemberExpired(_idCommitment, _mdetails.userMessageLimit, _mdetails.index);
-
-        // Move balance from expired membership to holder balance
-        balancesToWithdraw[_mdetails.holder][_mdetails.token] += _mdetails.amount;
-
-        // Deduct the expired membership rate limit
-        totalRateLimitPerEpoch -= _mdetails.userMessageLimit;
-
-        // Remove current membership references
-        if (_mdetails.prev != 0) {
-            members[_mdetails.prev].next = _mdetails.next;
-        } else {
-            head = _mdetails.next;
-        }
-
-        if (_mdetails.next != 0) {
-            members[_mdetails.next].prev = _mdetails.prev;
-        } else {
-            tail = _mdetails.prev;
-        }
-
-        availableExpiredIndices.push(_mdetails.index);
-
-        delete members[_idCommitment];
-    }
-
-    /// @dev Withdraw any available balance in tokens after a membership is erased.
-    /// @param _sender the address of the owner of the tokens
-    /// @param _token the address of the token to withdraw.
+    /// @dev Withdraw any available deposit balance in tokens after a membership is erased.
+    /// @param _sender the address of the transaction sender (who withdraws their tokens)
+    /// @param _token the address of the token to withdraw
     function _withdraw(address _sender, address _token) internal {
         require(_token != address(0), "ETH is not allowed");
 
-        uint256 amount = balancesToWithdraw[_sender][_token];
-        require(amount > 0, "Insufficient balance");
+        uint256 amount = depositsToWithdraw[_sender][_token];
+        require(amount > 0, "Insufficient deposit balance");
 
-        balancesToWithdraw[_sender][_token] = 0;
+        depositsToWithdraw[_sender][_token] = 0;
         IERC20(_token).safeTransfer(_sender, amount);
     }
 
