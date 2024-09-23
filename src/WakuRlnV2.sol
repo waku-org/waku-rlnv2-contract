@@ -55,6 +55,11 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         _;
     }
 
+    modifier noDuplicateMembers(uint256 idCommitment) {
+        if (members[idCommitment].userMessageLimit != 0) revert DuplicateIdCommitment();
+        _;
+    }
+
     constructor() {
         _disableInitializers();
     }
@@ -133,9 +138,14 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @notice Allows a user to register as a member
     /// @param idCommitment The idCommitment of the member
     /// @param userMessageLimit The message limit of the member
-    function register(uint256 idCommitment, uint32 userMessageLimit) external onlyValidIdCommitment(idCommitment) {
-        if (memberExists(idCommitment)) revert DuplicateIdCommitment();
-
+    function register(
+        uint256 idCommitment,
+        uint32 userMessageLimit
+    )
+        external
+        onlyValidIdCommitment(idCommitment)
+        noDuplicateMembers(idCommitment)
+    {
         uint32 index;
         bool reusedIndex;
         (index, reusedIndex) = _acquireMembership(_msgSender(), idCommitment, userMessageLimit, true);
@@ -154,9 +164,8 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     )
         external
         onlyValidIdCommitment(idCommitment)
+        noDuplicateMembers(idCommitment)
     {
-        if (memberExists(idCommitment)) revert DuplicateIdCommitment();
-
         for (uint256 i = 0; i < membershipsToErase.length; i++) {
             uint256 idCommitmentToErase = membershipsToErase[i];
             MembershipInfo memory mdetails = members[idCommitmentToErase];
