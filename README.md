@@ -18,7 +18,17 @@ Waku's RLNv2 contracts, which include -
 - [Forge Std](https://github.com/foundry-rs/forge-std): collection of helpful contracts and cheatcodes for testing
 - [Solhint Community](https://github.com/solhint-community/solhint-community): linter for Solidity code
 
+## Prerequisites
+
+- `pnpm` ([installation instructions](https://pnpm.io/installation))
+
 ## Usage
+
+Install dependencies before first run:
+
+```sh
+pnpm install
+```
 
 This is a list of the most frequently needed commands.
 
