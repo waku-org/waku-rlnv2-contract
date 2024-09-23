@@ -114,12 +114,12 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @param idCommitment The idCommitment of the member
     /// @return The metadata of the member (userMessageLimit, index, rateCommitment)
     function idCommitmentToMetadata(uint256 idCommitment) public view returns (uint32, uint32, uint256) {
-        MembershipInfo memory member = members[idCommitment];
+        MembershipInfo memory mdetails = members[idCommitment];
         // we cannot call indexToCommitment for 0 index if the member doesn't exist
-        if (member.userMessageLimit == 0) {
+        if (mdetails.userMessageLimit == 0) {
             return (0, 0, 0);
         }
-        return (member.userMessageLimit, member.index, indexToCommitment(member.index));
+        return (mdetails.userMessageLimit, mdetails.index, indexToCommitment(mdetails.index));
     }
 
     /// @notice Checks if a member exists
