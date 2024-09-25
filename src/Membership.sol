@@ -177,7 +177,7 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @dev Setup a new membership. If there are not enough remaining rate limit to acquire
     /// a new membership, it will attempt to erase existing expired memberships
     /// and reuse one of their slots
-    /// @param _sender holder of the membership. Generally `msg.sender` // FIXME: rename to holder?
+    /// @param _sender holder of the membership. Generally `msg.sender`
     /// @param _idCommitment idCommitment
     /// @param _rateLimit membership rate limit
     /// @param _token Address of the token used to acquire the membership
@@ -208,7 +208,7 @@ abstract contract MembershipUpgradeable is Initializable {
         (index, indexReused) = _getFreeIndex();
 
         memberships[_idCommitment] = MembershipInfo({
-            holder: _sender,
+            holder: _sender,  // FIXME: inconsistent with spec (keeper vs holder)
             gracePeriodStartTimestamp: block.timestamp + uint256(expirationTerm),
             gracePeriodDuration: gracePeriodDuration,
             token: _token,
