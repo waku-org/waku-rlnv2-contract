@@ -134,9 +134,9 @@ abstract contract MembershipUpgradeable is Initializable {
         internal
         onlyInitializing
     {
-        require(_maxTotalRateLimit >= maxMembershipRateLimit);
-        require(_maxMembershipRateLimit > minMembershipRateLimit); // FIXME: > or >=?
-        require(_minMembershipRateLimit > 0);
+        require(0 < _minMembershipRateLimit);
+        require(_minMembershipRateLimit <= _maxMembershipRateLimit); // FIXME: < or <=?
+        require(_maxMembershipRateLimit <= _maxTotalRateLimit);
         require(_activeStateDuration > 0); // FIXME: also _gracePeriodDuration > 0?
 
         priceCalculator = IPriceCalculator(_priceCalculator);
