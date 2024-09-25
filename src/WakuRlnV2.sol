@@ -64,14 +64,14 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @param _maxTotalRateLimit Maximum total rate limit of all memberships FIXME: clarify: excl expired?
     /// @param _minMembershipRateLimit Minimum rate limit of one membership
     /// @param _maxMembershipRateLimit Maximum rate limit of one membership
-    /// @param _expirationTerm Membership expiration term
+    /// @param _activeStateDuration Membership expiration term
     /// @param _gracePeriod Membership grace period
     function initialize(
         address _priceCalculator,
         uint32 _maxTotalRateLimit,
         uint32 _minMembershipRateLimit,
         uint32 _maxMembershipRateLimit,
-        uint32 _expirationTerm,
+        uint32 _activeStateDuration,
         uint32 _gracePeriod
     )
         public
@@ -84,7 +84,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
             _maxTotalRateLimit,
             _minMembershipRateLimit,
             _maxMembershipRateLimit,
-            _expirationTerm,
+            _activeStateDuration,
             _gracePeriod
         );
 
@@ -285,10 +285,10 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     }
 
     /// @notice Set the expiration term for new memberships (expiration dates of existing memberships don't change)
-    /// @param _expirationTerm  new expiration term
-    function setExpirationTerm(uint32 _expirationTerm) external onlyOwner {
-        require(_expirationTerm > 0);
-        expirationTerm = _expirationTerm;
+    /// @param _activeStateDuration  new expiration term
+    function setactiveStateDuration(uint32 _activeStateDuration) external onlyOwner {
+        require(_activeStateDuration > 0);
+        activeStateDuration = _activeStateDuration;
     }
 
     /// @notice Set the grace period for new memberships (grace periods of existing memberships don't change)

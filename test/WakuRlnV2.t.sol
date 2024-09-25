@@ -223,7 +223,7 @@ contract WakuRlnV2Test is Test {
 
         (, uint256 newgracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment);
 
-        assertEq(block.timestamp + uint256(w.expirationTerm()), newgracePeriodStartTimestamp);
+        assertEq(block.timestamp + uint256(w.activeStateDuration()), newgracePeriodStartTimestamp);
         assertFalse(w.isInGracePeriodNow(idCommitment));
         assertFalse(w.isExpired(idCommitment));
 
@@ -362,7 +362,7 @@ contract WakuRlnV2Test is Test {
         assertEq(holder, address(this));
 
         // The balance available for withdrawal should match the amount of the expired membership
-        uint256 availableBalance = w.balancesToWithdraw(address(this), address(token));
+        uint256 availableBalance = w.depositsToWithdraw(address(this), address(token));
         assertEq(availableBalance, priceA * 3);
     }
 
@@ -583,7 +583,7 @@ contract WakuRlnV2Test is Test {
         commitmentsToErase[0] = idCommitment;
         w.eraseMemberships(commitmentsToErase);
 
-        uint256 availableBalance = w.balancesToWithdraw(address(this), address(token));
+        uint256 availableBalance = w.depositsToWithdraw(address(this), address(token));
 
         assertEq(availableBalance, price);
         assertEq(token.balanceOf(address(w)), price);
@@ -594,7 +594,7 @@ contract WakuRlnV2Test is Test {
 
         uint256 balanceAfterWithdraw = token.balanceOf(address(this));
 
-        availableBalance = w.balancesToWithdraw(address(this), address(token));
+        availableBalance = w.depositsToWithdraw(address(this), address(token));
         assertEq(availableBalance, 0);
         assertEq(token.balanceOf(address(w)), 0);
         assertEq(balanceBeforeWithdraw + price, balanceAfterWithdraw);

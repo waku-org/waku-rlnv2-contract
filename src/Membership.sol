@@ -38,30 +38,30 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @notice Minimum rate limit of one membership
     uint32 public minMembershipRateLimit;
 
-    /// @notice Membership expiration term (T in the spec)
-    uint32 public expirationTerm;
+    /// @notice Membership active period duration (A in the spec)
+    uint32 public activeStateDuration;
 
-    /// @notice Membership grace period (G in the spec)
+    /// @notice Membership grace period duration (G in the spec)
     uint32 public gracePeriodDuration;
 
-    /// @notice deposit balances available to withdraw  // FIXME: are balances unavailable for withdrawal stored
-    /// elsewhere?
-    mapping(address holder => mapping(address token => uint256 balance)) public balancesToWithdraw;
+    /// @notice deposits available for withdrawal
+    /// Deposits unavailable for withdrawal are stored in MembershipInfo.
+    mapping(address holder => mapping(address token => uint256 balance)) public depositsToWithdraw;
 
-    /// @notice Total rate limit of all memberships in the membership set (messages per epoch)
+    /// @notice Current total rate limit of all memberships in the membership set (messages per epoch)
     uint256 public totalRateLimit;
 
-    /// @notice List of registered memberships
+    /// @notice List of memberships in the membership set
     mapping(uint256 idCommitment => MembershipInfo membership) public memberships;
 
     /// @notice The index in the membership set for the next membership to be registered
     uint32 public nextFreeIndex;
 
-    /// @notice indices of expired memberships (can be erased)
+    /// @notice indices of expired memberships that can be erased (and maybe overwritten)
     uint32[] public availableExpiredMembershipsIndices;
 
     struct MembershipInfo {
-        /// @notice amount of the token used to make the deposit to register this membership
+        /// @notice deposit amount (in tokens) to register this membership
         uint256 depositAmount;
         /// @notice timestamp of when the grace period starts for this membership
         uint256 gracePeriodStartTimestamp;
@@ -77,33 +77,37 @@ abstract contract MembershipUpgradeable is Initializable {
         address token;
     }
 
-    /// @notice Emitted when a membership is erased due to having exceeded the grace period or the owner having chosen
-    /// to not extend it // FIXME: expired or erased?
+    /// @notice Emitted when a membership is expired (exceeded its grace period and not extended)
     /// @param idCommitment the idCommitment of the membership
     /// @param membershipRateLimit the rate limit of this membership
     /// @param index the index of the membership in the membership set
     event MembershipExpired(uint256 idCommitment, uint32 membershipRateLimit, uint32 index);
 
-    /// @notice Emitted when a membership in its grace period is extended
+    /// @notice Emitted when a membership in its grace period is extended (i.e., is back to Active state)
     /// @param idCommitment the idCommitment of the membership
     /// @param membershipRateLimit the rate limit of this membership
     /// @param index the index of the membership in the membership set
-    /// @param newExpirationTime the new expiration timestamp of this membership
-    event MembershipExtended(uint256 idCommitment, uint32 membershipRateLimit, uint32 index, uint256 newExpirationTime);
+    /// @param newGracePeriodStartTimestamp the new grace period start timestamp of this membership
+    event MembershipExtended(
+      uint256 idCommitment,
+      uint32 membershipRateLimit,
+      uint32 index,
+      uint256 newGracePeriodStartTimestamp
+    );
 
     /// @dev contract initializer
     /// @param _priceCalculator Address of an instance of IPriceCalculator
     /// @param _maxTotalRateLimit Maximum total rate limit of all memberships in the membership set
     /// @param _minMembershipRateLimit Minimum rate limit of each membership
     /// @param _maxMembershipRateLimit Maximum rate limit of each membership
-    /// @param _expirationTerm Expiration term of each membership
-    /// @param _gracePeriodDuration Grace period duration for each membership
+    /// @param _activeStateDuration Active state duration of each membership
+    /// @param _gracePeriodDuration Grace period duration of each membership
     function __MembershipUpgradeable_init(
         address _priceCalculator,
         uint32 _maxTotalRateLimit,
         uint32 _minMembershipRateLimit,
         uint32 _maxMembershipRateLimit,
-        uint32 _expirationTerm,
+        uint32 _activeStateDuration,
         uint32 _gracePeriodDuration
     )
         internal
@@ -114,7 +118,7 @@ abstract contract MembershipUpgradeable is Initializable {
             _maxTotalRateLimit,
             _minMembershipRateLimit,
             _maxMembershipRateLimit,
-            _expirationTerm,
+            _activeStateDuration,
             _gracePeriodDuration
         );
     }
@@ -124,7 +128,7 @@ abstract contract MembershipUpgradeable is Initializable {
         uint32 _maxTotalRateLimit,
         uint32 _minMembershipRateLimit,
         uint32 _maxMembershipRateLimit,
-        uint32 _expirationTerm,
+        uint32 _activeStateDuration,
         uint32 _gracePeriodDuration
     )
         internal
@@ -133,13 +137,13 @@ abstract contract MembershipUpgradeable is Initializable {
         require(_maxTotalRateLimit >= maxMembershipRateLimit);
         require(_maxMembershipRateLimit > minMembershipRateLimit); // FIXME: > or >=?
         require(_minMembershipRateLimit > 0);
-        require(_expirationTerm > 0); // FIXME: also _gracePeriodDuration > 0?
+        require(_activeStateDuration > 0); // FIXME: also _gracePeriodDuration > 0?
 
         priceCalculator = IPriceCalculator(_priceCalculator);
         maxTotalRateLimit = _maxTotalRateLimit;
         maxMembershipRateLimit = _maxMembershipRateLimit;
         minMembershipRateLimit = _minMembershipRateLimit;
-        expirationTerm = _expirationTerm;
+        activeStateDuration = _activeStateDuration;
         gracePeriodDuration = _gracePeriodDuration;
     }
 
@@ -209,7 +213,7 @@ abstract contract MembershipUpgradeable is Initializable {
 
         memberships[_idCommitment] = MembershipInfo({
             holder: _sender,  // FIXME: inconsistent with spec (keeper vs holder)
-            gracePeriodStartTimestamp: block.timestamp + uint256(expirationTerm),
+            gracePeriodStartTimestamp: block.timestamp + uint256(activeStateDuration),
             gracePeriodDuration: gracePeriodDuration,
             token: _token,
             depositAmount: _depositAmount,
@@ -246,7 +250,7 @@ abstract contract MembershipUpgradeable is Initializable {
         if (_sender != membership.holder) revert AttemptedExtensionByNonHolder(_idCommitment); // FIXME: turn into a
             // modifier?
         // FIXME: see spec: should extension depend on the current block.timestamp?
-        uint256 newGracePeriodStartTimestamp = block.timestamp + uint256(expirationTerm);
+        uint256 newGracePeriodStartTimestamp = block.timestamp + uint256(activeStateDuration);
 
         membership.gracePeriodStartTimestamp = newGracePeriodStartTimestamp;
         membership.gracePeriodDuration = gracePeriodDuration; // FIXME: redundant: just assigns old value
@@ -313,8 +317,8 @@ abstract contract MembershipUpgradeable is Initializable {
 
         emit MembershipExpired(_idCommitment, _membership.rateLimit, _membership.index);
 
-        // Move balance from expired membership to holder balance
-        balancesToWithdraw[_membership.holder][_membership.token] += _membership.depositAmount;
+        // Move deposit balance from expired membership to holder deposit balance
+        depositsToWithdraw[_membership.holder][_membership.token] += _membership.depositAmount;
 
         // Deduct the expired membership rate limit
         totalRateLimit -= _membership.rateLimit;
@@ -325,16 +329,16 @@ abstract contract MembershipUpgradeable is Initializable {
         delete memberships[_idCommitment];
     }
 
-    /// @dev Withdraw any available balance in tokens after a membership is erased.
+    /// @dev Withdraw any available deposit balance in tokens after a membership is erased.
     /// @param _sender the address of the owner of the tokens
     /// @param _token the address of the token to withdraw
     function _withdraw(address _sender, address _token) internal {
         require(_token != address(0), "ETH is not allowed");
 
-        uint256 amount = balancesToWithdraw[_sender][_token];
-        require(amount > 0, "Insufficient balance");
+        uint256 amount = depositsToWithdraw[_sender][_token];
+        require(amount > 0, "Insufficient deposit balance");
 
-        balancesToWithdraw[_sender][_token] = 0;
+        depositsToWithdraw[_sender][_token] = 0;
         IERC20(_token).safeTransfer(_sender, amount);
     }
 
