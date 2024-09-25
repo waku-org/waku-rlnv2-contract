@@ -199,12 +199,12 @@ contract WakuRlnV2Test is Test {
         w.register(idCommitment, membershipRateLimit);
         (, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment);
 
-        assertFalse(w.isInGracePeriodNow(idCommitment));
+        assertFalse(w.isInGracePeriod(idCommitment));
         assertFalse(w.isExpired(idCommitment));
 
         vm.warp(gracePeriodStartTimestamp);
 
-        assertTrue(w.isInGracePeriodNow(idCommitment));
+        assertTrue(w.isInGracePeriod(idCommitment));
         assertFalse(w.isExpired(idCommitment));
 
         uint256[] memory commitmentsToExtend = new uint256[](1);
@@ -224,7 +224,7 @@ contract WakuRlnV2Test is Test {
         (, uint256 newgracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment);
 
         assertEq(block.timestamp + uint256(w.activeStateDuration()), newgracePeriodStartTimestamp);
-        assertFalse(w.isInGracePeriodNow(idCommitment));
+        assertFalse(w.isInGracePeriod(idCommitment));
         assertFalse(w.isExpired(idCommitment));
 
         // Attempt to extend a non grace period membership
@@ -289,7 +289,7 @@ contract WakuRlnV2Test is Test {
 
         vm.warp(membershipExpirationTimestamp);
 
-        assertFalse(w.isInGracePeriodNow(idCommitment));
+        assertFalse(w.isInGracePeriod(idCommitment));
         assertTrue(w.isExpired(idCommitment));
     }
 
@@ -318,7 +318,7 @@ contract WakuRlnV2Test is Test {
         // Ensure that this is the case
         assertTrue(w.isExpired(4));
         assertFalse(w.isExpired(5));
-        assertFalse(w.isInGracePeriodNow(5));
+        assertFalse(w.isInGracePeriod(5));
 
         (, uint256 priceB) = w.priceCalculator().calculate(60);
         token.approve(address(w), priceB);

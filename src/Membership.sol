@@ -66,7 +66,7 @@ abstract contract MembershipUpgradeable is Initializable {
         /// @notice timestamp of when the grace period starts for this membership
         uint256 gracePeriodStartTimestamp;
         /// @notice duration of the grace period
-        uint32 gracePeriodDuration;
+        uint32 gracePeriodDuration; // FIXME: does each membership need to store it if it's a global constant?
         /// @notice the membership rate limit
         uint32 rateLimit;
         /// @notice the index of the membership in the membership set
@@ -89,10 +89,7 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @param index the index of the membership in the membership set
     /// @param newGracePeriodStartTimestamp the new grace period start timestamp of this membership
     event MembershipExtended(
-      uint256 idCommitment,
-      uint32 membershipRateLimit,
-      uint32 index,
-      uint256 newGracePeriodStartTimestamp
+        uint256 idCommitment, uint32 membershipRateLimit, uint32 index, uint256 newGracePeriodStartTimestamp
     );
 
     /// @dev contract initializer
@@ -141,26 +138,25 @@ abstract contract MembershipUpgradeable is Initializable {
 
         priceCalculator = IPriceCalculator(_priceCalculator);
         maxTotalRateLimit = _maxTotalRateLimit;
-        maxMembershipRateLimit = _maxMembershipRateLimit;
         minMembershipRateLimit = _minMembershipRateLimit;
+        maxMembershipRateLimit = _maxMembershipRateLimit;
         activeStateDuration = _activeStateDuration;
         gracePeriodDuration = _gracePeriodDuration;
     }
 
-    /// @notice Checks if a membership rate limit is valid. This does not take into account whether the total
-    /// memberships have reached already the `maxTotalRateLimit` // FIXME: clarify
-    /// @param membershipRateLimit The membership rate limit
-    /// @return true if the membership rate limit is valid, false otherwise
-    function isValidMembershipRateLimit(uint32 membershipRateLimit) external view returns (bool) {
-        return membershipRateLimit >= minMembershipRateLimit && membershipRateLimit <= maxMembershipRateLimit;
+    /// @notice Checks if a rate limit is within the allowed bounds
+    /// @param rateLimit The rate limit
+    /// @return true if the rate limit is within the allowed bounds, false otherwise
+    function isValidMembershipRateLimit(uint32 rateLimit) public view returns (bool) {
+        return minMembershipRateLimit <= rateLimit && rateLimit <= maxMembershipRateLimit;
     }
 
-    /// @dev acquire a membership and trasnfer the fees to the contract // FIXME: fees == deposit?
-    /// @param _sender address of the owner of the new membership
+    /// @dev acquire a membership and trasnfer the deposit to the contract
+    /// @param _sender address of the holder of the new membership  // FIXME: keeper?
     /// @param _idCommitment the idCommitment of the new membership
     /// @param _rateLimit the membership rate limit
-    /// @return index the index in the membership set
-    /// @return indexReused indicates whether using a new Merkle tree leaf or an existing one
+    /// @return index the index of the new membership in the membership set
+    /// @return indexReused true if an expired membership was reused (overwritten), false otherwise
     function _acquireMembership(
         address _sender,
         uint256 _idCommitment,
@@ -169,19 +165,23 @@ abstract contract MembershipUpgradeable is Initializable {
         internal
         returns (uint32 index, bool indexReused)
     {
+        if (!isValidMembershipRateLimit(_rateLimit)) {
+            revert InvalidRateLimit();
+        }
         (address token, uint256 amount) = priceCalculator.calculate(_rateLimit);
         (index, indexReused) = _setupMembershipDetails(_sender, _idCommitment, _rateLimit, token, amount);
-        _transferFees(_sender, token, amount);
+        _transferDepositToContract(_sender, token, amount);
     }
 
-    function _transferFees(address _from, address _token, uint256 _amount) internal {
+    // FIXME: do we need this as a separate function? (it's not called anywhere else)
+    function _transferDepositToContract(address _from, address _token, uint256 _amount) internal {
         IERC20(_token).safeTransferFrom(_from, address(this), _amount);
     }
 
     /// @dev Setup a new membership. If there are not enough remaining rate limit to acquire
     /// a new membership, it will attempt to erase existing expired memberships
     /// and reuse one of their slots
-    /// @param _sender holder of the membership. Generally `msg.sender`
+    /// @param _sender holder of the membership. Generally `msg.sender` // FIXME: keeper?
     /// @param _idCommitment idCommitment
     /// @param _rateLimit membership rate limit
     /// @param _token Address of the token used to acquire the membership
@@ -198,21 +198,22 @@ abstract contract MembershipUpgradeable is Initializable {
         internal
         returns (uint32 index, bool indexReused)
     {
-        if (_rateLimit < minMembershipRateLimit || _rateLimit > maxMembershipRateLimit) {
-            revert InvalidRateLimit();
-        }
-
         // Determine if we exceed the total rate limit
         totalRateLimit += _rateLimit;
         if (totalRateLimit > maxTotalRateLimit) {
             revert ExceededMaxTotalRateLimit();
         }
 
-        // Reuse available slots from previously removed (FIXME: clarify "removed") expired memberships
+        // FIXME: check if we even need to reuse an expired membership?
+
+        // Reuse available expired memberships
         (index, indexReused) = _getFreeIndex();
 
+        // FIXME: we must check that the rate limit of the reused membership is sufficient
+        // otherwise, the total rate limit may become too high
+
         memberships[_idCommitment] = MembershipInfo({
-            holder: _sender,  // FIXME: inconsistent with spec (keeper vs holder)
+            holder: _sender, // FIXME: keeper?
             gracePeriodStartTimestamp: block.timestamp + uint256(activeStateDuration),
             gracePeriodDuration: gracePeriodDuration,
             token: _token,
@@ -226,7 +227,7 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @return index index to be used for another membership registration
     /// @return indexReused indicates whether index comes form reusing a slot of an expired membership
     function _getFreeIndex() internal returns (uint32 index, bool indexReused) {
-        // Reuse available slots from previously removed (FIXME: clarify "removed") expired memberships
+        // Reuse available expired memberships
         uint256 arrLen = availableExpiredMembershipsIndices.length;
         if (arrLen != 0) {
             index = availableExpiredMembershipsIndices[arrLen - 1];
@@ -243,12 +244,11 @@ abstract contract MembershipUpgradeable is Initializable {
     function _extendMembership(address _sender, uint256 _idCommitment) public {
         MembershipInfo storage membership = memberships[_idCommitment];
 
-        if (!_isInGracePeriodNow(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration)) {
+        if (!_isInGracePeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration)) {
             revert NotInGracePeriod(_idCommitment);
         }
-
-        if (_sender != membership.holder) revert AttemptedExtensionByNonHolder(_idCommitment); // FIXME: turn into a
-            // modifier?
+        // FIXME: turn into a modifier?
+        if (_sender != membership.holder) revert AttemptedExtensionByNonHolder(_idCommitment);
         // FIXME: see spec: should extension depend on the current block.timestamp?
         uint256 newGracePeriodStartTimestamp = block.timestamp + uint256(activeStateDuration);
 
@@ -284,7 +284,7 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @dev Determine whether the current timestamp is in a given grace period
     /// @param _gracePeriodStartTimestamp timestamp in which the grace period starts
     /// @param _gracePeriodDuration duration of the grace period
-    function _isInGracePeriodNow(
+    function _isInGracePeriod(
         uint256 _gracePeriodStartTimestamp,
         uint32 _gracePeriodDuration
     )
@@ -292,16 +292,18 @@ abstract contract MembershipUpgradeable is Initializable {
         view
         returns (bool)
     {
-        uint256 blockTimestamp = block.timestamp;
-        return blockTimestamp >= _gracePeriodStartTimestamp
-            && blockTimestamp <= _gracePeriodStartTimestamp + uint256(_gracePeriodDuration);
+        uint256 timeNow = block.timestamp;
+        return (
+            _gracePeriodStartTimestamp <= timeNow
+                && timeNow <= _gracePeriodStartTimestamp + uint256(_gracePeriodDuration)
+        );
     }
 
     /// @notice Determine if a membership is in grace period now
     /// @param _idCommitment the idCommitment of the membership
-    function isInGracePeriodNow(uint256 _idCommitment) public view returns (bool) {
+    function isInGracePeriod(uint256 _idCommitment) public view returns (bool) {
         MembershipInfo memory membership = memberships[_idCommitment];
-        return _isInGracePeriodNow(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
+        return _isInGracePeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
     }
 
     /// @dev Erase expired memberships or owned grace-period memberships.
@@ -309,13 +311,11 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @param _idCommitment idCommitment of the membership to erase
     function _eraseMembership(address _sender, uint256 _idCommitment, MembershipInfo memory _membership) internal {
         bool membershipExpired = _isExpired(_membership.gracePeriodStartTimestamp, _membership.gracePeriodDuration);
-        bool isInGracePeriodAndOwned = // FIXME: separate into two checks? cf. short-circuit
-        _isInGracePeriodNow(_membership.gracePeriodStartTimestamp, _membership.gracePeriodDuration)
-            && _membership.holder == _sender;
-        // FIXME: we already had a non-holder check: reuse it here as a modifier
-        if (!membershipExpired && !isInGracePeriodAndOwned) revert CantEraseMembership(_idCommitment);
-
-        emit MembershipExpired(_idCommitment, _membership.rateLimit, _membership.index);
+        bool membershipIsInGracePeriodAndHeld = _isInGracePeriod(
+            _membership.gracePeriodStartTimestamp, _membership.gracePeriodDuration
+        ) && _membership.holder == _sender;
+        // FIXME: we already had a non-holder check: reuse it here as a modifier?
+        if (!membershipExpired && !membershipIsInGracePeriodAndHeld) revert CantEraseMembership(_idCommitment);
 
         // Move deposit balance from expired membership to holder deposit balance
         depositsToWithdraw[_membership.holder][_membership.token] += _membership.depositAmount;
@@ -323,10 +323,12 @@ abstract contract MembershipUpgradeable is Initializable {
         // Deduct the expired membership rate limit
         totalRateLimit -= _membership.rateLimit;
 
-        // Note: the Merkle tree data will be erased lazily later  // FIXME: when?
+        // Note: the Merkle tree data will be erased lazily when the index is reused
         availableExpiredMembershipsIndices.push(_membership.index);
 
         delete memberships[_idCommitment];
+
+        emit MembershipExpired(_idCommitment, _membership.rateLimit, _membership.index);
     }
 
     /// @dev Withdraw any available deposit balance in tokens after a membership is erased.

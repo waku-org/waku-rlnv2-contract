@@ -252,7 +252,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     }
 
     /// @notice Withdraw any available deposit balance in tokens after a membership is erased.
-    /// @param token The address of the token to withdraw. Use 0x000...000 to withdraw ETH
+    /// @param token The address of the token to withdraw
     function withdraw(address token) external {
         _withdraw(_msgSender(), token);
     }
