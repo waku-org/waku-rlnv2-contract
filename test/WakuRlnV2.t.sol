@@ -41,7 +41,7 @@ contract WakuRlnV2Test is Test {
 
         uint256 idCommitment = 2;
         uint32 membershipRateLimit = 2;
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
         token.approve(address(w), price);
         w.register(idCommitment, membershipRateLimit);
@@ -59,8 +59,7 @@ contract WakuRlnV2Test is Test {
             w.root(),
             13_801_897_483_540_040_307_162_267_952_866_411_686_127_372_014_953_358_983_481_592_640_000_001_877_295
         );
-        (uint32 fetchedMembershipRateLimit2, uint32 index2, uint256 rateCommitment2) =
-            w.getMembershipInfo(idCommitment);
+        (uint32 fetchedMembershipRateLimit2, uint32 index2, uint256 rateCommitment2) = w.getMembershipInfo(idCommitment);
         assertEq(fetchedMembershipRateLimit2, membershipRateLimit);
         assertEq(index2, 0);
         assertEq(rateCommitment2, rateCommitment);
@@ -96,7 +95,7 @@ contract WakuRlnV2Test is Test {
     function test__ValidRegistration(uint32 membershipRateLimit) external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         uint256 minMembershipRateLimit = w.minMembershipRateLimit();
         uint256 maxMembershipRateLimit = w.maxMembershipRateLimit();
         vm.assume(membershipRateLimit >= minMembershipRateLimit && membershipRateLimit <= maxMembershipRateLimit);
@@ -119,11 +118,12 @@ contract WakuRlnV2Test is Test {
     }
 
     function test__LinearPriceCalculation(uint32 membershipRateLimit) external view {
-        IPriceCalculator priceCalculator = w.priceCalculator();
-        uint256 pricePerMessagePerPeriod = LinearPriceCalculator(address(priceCalculator)).pricePerMessagePerEpoch();
+        IPriceCalculator depositAmountCalculator = w.depositAmountCalculator();
+        uint256 pricePerMessagePerPeriod =
+            LinearPriceCalculator(address(depositAmountCalculator)).pricePerMessagePerEpoch();
         assertNotEq(pricePerMessagePerPeriod, 0);
         uint256 expectedPrice = uint256(membershipRateLimit) * pricePerMessagePerPeriod;
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         assertEq(price, expectedPrice);
     }
 
@@ -133,7 +133,7 @@ contract WakuRlnV2Test is Test {
         uint256 maxMembershipRateLimit = w.maxMembershipRateLimit();
         vm.assume(membershipRateLimit >= minMembershipRateLimit && membershipRateLimit <= maxMembershipRateLimit);
         vm.assume(w.isValidIdCommitment(idCommitment) && w.isValidMembershipRateLimit(membershipRateLimit));
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
 
         token.approve(address(w), price - 1);
@@ -153,7 +153,7 @@ contract WakuRlnV2Test is Test {
         vm.pauseGasMetering();
         uint256 idCommitment = 0;
         uint32 membershipRateLimit = 2;
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
 
         token.approve(address(w), price);
@@ -164,7 +164,7 @@ contract WakuRlnV2Test is Test {
     function test__InvalidRegistration__InvalidIdCommitment__LargerThanField() external {
         vm.pauseGasMetering();
         uint32 membershipRateLimit = 20;
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
 
         uint256 idCommitment = w.Q() + 1;
@@ -179,17 +179,17 @@ contract WakuRlnV2Test is Test {
         uint32 invalidMin = w.minMembershipRateLimit() - 1;
         uint32 invalidMax = w.maxMembershipRateLimit() + 1;
 
-        vm.expectRevert(abi.encodeWithSelector(InvalidRateLimit.selector));
+        vm.expectRevert(abi.encodeWithSelector(InvalidMembershipRateLimit.selector));
         w.register(idCommitment, invalidMin);
 
-        vm.expectRevert(abi.encodeWithSelector(InvalidRateLimit.selector));
+        vm.expectRevert(abi.encodeWithSelector(InvalidMembershipRateLimit.selector));
         w.register(idCommitment, invalidMax);
     }
 
     function test__ValidRegistrationExtend(uint32 membershipRateLimit) external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         vm.assume(
             membershipRateLimit >= w.minMembershipRateLimit() && membershipRateLimit <= w.maxMembershipRateLimit()
         );
@@ -239,7 +239,7 @@ contract WakuRlnV2Test is Test {
     function test__ValidRegistrationExtendSingleMembership(uint32 membershipRateLimit) external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         vm.assume(
             membershipRateLimit >= w.minMembershipRateLimit() && membershipRateLimit <= w.maxMembershipRateLimit()
         );
@@ -271,7 +271,7 @@ contract WakuRlnV2Test is Test {
     function test__ValidRegistrationExpiry(uint32 membershipRateLimit) external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         vm.assume(
             membershipRateLimit >= w.minMembershipRateLimit() && membershipRateLimit <= w.maxMembershipRateLimit()
         );
@@ -303,7 +303,7 @@ contract WakuRlnV2Test is Test {
         vm.stopPrank();
         vm.resumeGasMetering();
 
-        (, uint256 priceA) = w.priceCalculator().calculate(20);
+        (, uint256 priceA) = w.depositAmountCalculator().calculate(20);
 
         for (uint256 i = 1; i <= 5; i++) {
             token.approve(address(w), priceA);
@@ -321,7 +321,7 @@ contract WakuRlnV2Test is Test {
         assertFalse(w.isExpired(5));
         assertFalse(w.isInGracePeriod(5));
 
-        (, uint256 priceB) = w.priceCalculator().calculate(60);
+        (, uint256 priceB) = w.depositAmountCalculator().calculate(60);
         token.approve(address(w), priceB);
 
         // Should fail. There's not enough free rate limit
@@ -334,7 +334,7 @@ contract WakuRlnV2Test is Test {
         commitmentsToErase[1] = 2;
         commitmentsToErase[2] = 5; // This one is still active
         token.approve(address(w), priceB);
-        vm.expectRevert(abi.encodeWithSelector(CantEraseMembership.selector, 5));
+        vm.expectRevert(abi.encodeWithSelector(CannotEraseMembership.selector, 5));
         w.register(6, 60, commitmentsToErase);
 
         // Attempt to expire 3 commitments that can be erased
@@ -381,33 +381,33 @@ contract WakuRlnV2Test is Test {
 
         // Exceeds the max rate limit per user
         uint32 membershipRateLimit = 10;
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         token.approve(address(w), price);
-        vm.expectRevert(abi.encodeWithSelector(InvalidRateLimit.selector));
+        vm.expectRevert(abi.encodeWithSelector(InvalidMembershipRateLimit.selector));
         w.register(1, membershipRateLimit);
 
         // Should register succesfully
         membershipRateLimit = 4;
-        (, price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         token.approve(address(w), price);
         w.register(2, membershipRateLimit);
 
         // Exceeds the rate limit
         membershipRateLimit = 2;
-        (, price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         token.approve(address(w), price);
         vm.expectRevert(abi.encodeWithSelector(ExceededMaxTotalRateLimit.selector));
         w.register(3, membershipRateLimit);
 
         // Should register succesfully
         membershipRateLimit = 1;
-        (, price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         token.approve(address(w), price);
         w.register(3, membershipRateLimit);
 
         // We ran out of rate limit again
         membershipRateLimit = 1;
-        (, price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         token.approve(address(w), price);
         vm.expectRevert(abi.encodeWithSelector(ExceededMaxTotalRateLimit.selector));
         w.register(4, membershipRateLimit);
@@ -416,7 +416,7 @@ contract WakuRlnV2Test is Test {
     function test__indexReuse_eraseMemberships(uint32 idCommitmentsLength) external {
         vm.assume(idCommitmentsLength > 0 && idCommitmentsLength < 50);
 
-        (, uint256 price) = w.priceCalculator().calculate(20);
+        (, uint256 price) = w.depositAmountCalculator().calculate(20);
         uint32 index;
         uint256[] memory commitmentsToErase = new uint256[](idCommitmentsLength);
         for (uint256 i = 1; i <= idCommitmentsLength; i++) {
@@ -468,7 +468,7 @@ contract WakuRlnV2Test is Test {
     function test__RemoveExpiredMemberships(uint32 membershipRateLimit) external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         vm.assume(
             membershipRateLimit >= w.minMembershipRateLimit() && membershipRateLimit <= w.maxMembershipRateLimit()
         );
@@ -518,7 +518,7 @@ contract WakuRlnV2Test is Test {
         vm.warp(gracePeriodStartTimestamp - 1);
         commitmentsToErase[0] = idCommitment;
         commitmentsToErase[1] = idCommitment + 4;
-        vm.expectRevert(abi.encodeWithSelector(CantEraseMembership.selector, idCommitment + 4));
+        vm.expectRevert(abi.encodeWithSelector(CannotEraseMembership.selector, idCommitment + 4));
         w.eraseMemberships(commitmentsToErase);
     }
 
@@ -526,7 +526,7 @@ contract WakuRlnV2Test is Test {
         vm.pauseGasMetering();
         vm.assume(idCommitmentsLength > 1 && idCommitmentsLength <= 100);
         uint32 membershipRateLimit = w.minMembershipRateLimit();
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
 
         uint256 time = block.timestamp;
@@ -562,10 +562,10 @@ contract WakuRlnV2Test is Test {
     function test__WithdrawToken(uint32 membershipRateLimit) external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
-        LinearPriceCalculator priceCalculator = LinearPriceCalculator(address(w.priceCalculator()));
-        vm.prank(priceCalculator.owner());
-        priceCalculator.setTokenAndPrice(address(token), 5 wei);
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        LinearPriceCalculator depositAmountCalculator = LinearPriceCalculator(address(w.depositAmountCalculator()));
+        vm.prank(depositAmountCalculator.owner());
+        depositAmountCalculator.setTokenAndPrice(address(token), 5 wei);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         token.mint(address(this), price);
         vm.assume(
             membershipRateLimit >= w.minMembershipRateLimit() && membershipRateLimit <= w.maxMembershipRateLimit()
@@ -605,21 +605,21 @@ contract WakuRlnV2Test is Test {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
         uint32 membershipRateLimit = w.minMembershipRateLimit();
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
 
         token.approve(address(w), price);
         w.register(idCommitment, membershipRateLimit);
 
         token.approve(address(w), price);
-        vm.expectRevert(DuplicateIdCommitment.selector);
+        vm.expectRevert(bytes("Duplicate idCommitment: membership already exists"));
         w.register(idCommitment, membershipRateLimit);
     }
 
     function test__InvalidRegistration__FullTree() external {
         vm.pauseGasMetering();
         uint32 membershipRateLimit = 20;
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
 
         // we progress the tree to the last leaf
@@ -647,7 +647,7 @@ contract WakuRlnV2Test is Test {
         // we set nextFreeIndex to 4294967295 (1 << 20) = 0x00100000
         vm.store(address(w), bytes32(uint256(256)), 0x0000000000000000000000000000000000000000000000000000000000100000);
         token.approve(address(w), price);
-        vm.expectRevert(FullMembershipSet.selector);
+        vm.expectRevert(bytes("Membership set is full"));
         w.register(1, membershipRateLimit);
     }
 
@@ -665,7 +665,7 @@ contract WakuRlnV2Test is Test {
         vm.pauseGasMetering();
         uint256 idCommitment = 1;
         uint32 membershipRateLimit = w.minMembershipRateLimit();
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
 
         token.approve(address(w), price);
@@ -680,7 +680,7 @@ contract WakuRlnV2Test is Test {
         vm.pauseGasMetering();
         vm.assume(idCommitmentsLength > 0 && idCommitmentsLength <= 100);
         uint32 membershipRateLimit = w.minMembershipRateLimit();
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        (, uint256 price) = w.depositAmountCalculator().calculate(membershipRateLimit);
 
         for (uint256 i = 0; i < idCommitmentsLength; i++) {
             token.approve(address(w), price);

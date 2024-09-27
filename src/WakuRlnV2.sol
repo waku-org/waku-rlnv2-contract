@@ -11,17 +11,11 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { MembershipUpgradeable } from "./Membership.sol";
 import { IPriceCalculator } from "./IPriceCalculator.sol";
 
-/// The membership set is full
-error FullMembershipSet();
-
 /// A membership with this idCommitment is already registered
 error DuplicateIdCommitment();
 
 /// Invalid idCommitment
 error InvalidIdCommitment(uint256 idCommitment);
-
-/// Invalid membership rate limit // FIXME: this is not used - remove?
-error InvalidMembershipRateLimit(uint32 rateLimit);
 
 /// Invalid pagination query
 error InvalidPaginationQuery(uint256 startIndex, uint256 endIndex);
@@ -55,13 +49,26 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         _;
     }
 
+    /// @notice the modifier to check that the membership with this idCommitment doesn't already exist
+    /// @param idCommitment The idCommitment of the membership
+    modifier noDuplicateMembership(uint256 idCommitment) {
+        require(!membershipExists(idCommitment), "Duplicate idCommitment: membership already exists");
+        _;
+    }
+
+    /// @notice the modifier to check that the membership set is not full
+    modifier membershipSetNotFull() {
+        require(nextFreeIndex < MAX_MEMBERSHIP_SET_SIZE, "Membership set is full");
+        _;
+    }
+
     constructor() {
         _disableInitializers();
     }
 
     /// @dev contract initializer
     /// @param _priceCalculator Address of an instance of IPriceCalculator
-    /// @param _maxTotalRateLimit Maximum total rate limit of all memberships FIXME: clarify: excl expired?
+    /// @param _maxTotalRateLimit Maximum total rate limit of all memberships in the membership set
     /// @param _minMembershipRateLimit Minimum rate limit of one membership
     /// @param _maxMembershipRateLimit Maximum rate limit of one membership
     /// @param _activeStateDuration Membership expiration term
@@ -133,15 +140,16 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @notice Register a membership
     /// @param idCommitment The idCommitment of the new membership
     /// @param rateLimit The rate limit of the new membership
-    function register(uint256 idCommitment, uint32 rateLimit) external onlyValidIdCommitment(idCommitment) {
-        // FIXME: turn into modifier?
-        if (membershipExists(idCommitment)) revert DuplicateIdCommitment();
-
-        uint32 index;
-        bool indexReused;
-        (index, indexReused) = _acquireMembership(_msgSender(), idCommitment, rateLimit);
-
-        _register(idCommitment, rateLimit, index, indexReused);
+    function register(
+        uint256 idCommitment,
+        uint32 rateLimit
+    )
+        external
+        onlyValidIdCommitment(idCommitment)
+        noDuplicateMembership(idCommitment)
+        membershipSetNotFull
+    {
+        _register(idCommitment, rateLimit);
     }
 
     /// @notice Register a membership
@@ -155,11 +163,16 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     )
         external
         onlyValidIdCommitment(idCommitment)
+        noDuplicateMembership(idCommitment)
+        membershipSetNotFull
     {
-        // FIXME: turn into modifier?
-        if (membershipExists(idCommitment)) revert DuplicateIdCommitment();
+        _eraseMemberships(idCommitmentsToErase);
+        _register(idCommitment, rateLimit);
+    }
 
-        // FIXME: extract in a separate function?
+    /// @dev Erase memberships from the list of idCommitments
+    /// @param idCommitmentsToErase The idCommitments to erase
+    function _eraseMemberships(uint256[] calldata idCommitmentsToErase) internal {
         for (uint256 i = 0; i < idCommitmentsToErase.length; i++) {
             uint256 idCommitmentToErase = idCommitmentsToErase[i];
             MembershipInfo memory membershipToErase = memberships[idCommitmentToErase];
@@ -167,24 +180,15 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
             _eraseMembershipAndSaveSlotToReuse(_msgSender(), idCommitmentToErase, membershipToErase);
             LazyIMT.update(merkleTree, 0, membershipToErase.index);
         }
-
-        // FIXME: code repeats cf. register()
-        uint32 index;
-        bool indexReused;
-        (index, indexReused) = _acquireMembership(_msgSender(), idCommitment, rateLimit);
-
-        _register(idCommitment, rateLimit, index, indexReused);
     }
 
     /// @dev Registers a membership
     /// @param idCommitment The idCommitment of the membership
     /// @param rateLimit The rate limit of the membership
-    /// @param index The index of the membership in the membership set
-    /// @param indexReused Indicates whether we're inserting a new element in the Merkle tree or updating a existing
-    /// element
-    function _register(uint256 idCommitment, uint32 rateLimit, uint32 index, bool indexReused) internal {
-        // FIXME: check this earlier, e.g. as a modifier to register() functions?
-        if (nextFreeIndex >= MAX_MEMBERSHIP_SET_SIZE) revert FullMembershipSet();
+    function _register(uint256 idCommitment, uint32 rateLimit) internal {
+        uint32 index;
+        bool indexReused;
+        (index, indexReused) = _acquireMembership(_msgSender(), idCommitment, rateLimit);
 
         uint256 rateCommitment = PoseidonT3.hash([idCommitment, rateLimit]);
         if (indexReused) {
@@ -246,14 +250,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// The user (i.e. the transaction sender) can then withdraw the deposited tokens.
     /// @param idCommitments list of idCommitments of the memberships to erase
     function eraseMemberships(uint256[] calldata idCommitments) external {
-        for (uint256 i = 0; i < idCommitments.length; i++) {
-            // FIXME: not DRY: see register()
-            uint256 idCommitmentToErase = idCommitments[i];
-            MembershipInfo memory membershipToErase = memberships[idCommitmentToErase];
-            if (membershipToErase.rateLimit == 0) revert InvalidIdCommitment(idCommitmentToErase);
-            _eraseMembershipAndSaveSlotToReuse(_msgSender(), idCommitmentToErase, membershipToErase);
-            LazyIMT.update(merkleTree, 0, membershipToErase.index);
-        }
+        _eraseMemberships(idCommitments);
     }
 
     /// @notice Withdraw any available deposit balance in tokens after a membership is erased.
@@ -264,11 +261,11 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
 
     /// @notice Set the address of the price calculator
     /// @param _priceCalculator new price calculator address
-    function setPriceCalculator(address _priceCalculator) external onlyOwner {
-        priceCalculator = IPriceCalculator(_priceCalculator);
+    function setDepositAmountCalculator(address _priceCalculator) external onlyOwner {
+        depositAmountCalculator = IPriceCalculator(_priceCalculator);
     }
 
-    /// @notice Set the maximum total rate limit of all (FIXME: excl expired?) memberships in the membership set
+    /// @notice Set the maximum total rate limit of all memberships in the membership set
     /// @param _maxTotalRateLimit new maximum total rate limit (messages per epoch)
     function setMaxTotalRateLimit(uint32 _maxTotalRateLimit) external onlyOwner {
         require(_maxTotalRateLimit >= maxMembershipRateLimit);
@@ -285,7 +282,8 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @notice Set the minimum rate limit of one membership
     /// @param _minMembershipRateLimit  new minimum rate limit per membership (messages per epoch)
     function setMinMembershipRateLimit(uint32 _minMembershipRateLimit) external onlyOwner {
-        require(_minMembershipRateLimit > 0); // FIXME: we must also check here that min rate <= max rate
+        require(_minMembershipRateLimit > 0);
+        require(_minMembershipRateLimit <= maxMembershipRateLimit);
         minMembershipRateLimit = _minMembershipRateLimit;
     }
 
@@ -299,7 +297,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @notice Set the grace period for new memberships (grace periods of existing memberships don't change)
     /// @param _gracePeriod  new grace period term
     function setGracePeriod(uint32 _gracePeriod) external onlyOwner {
-        // FIXME: shall we check that _gracePeriod > 0?
-        gracePeriodDuration = _gracePeriod;
+        // Note: grace period duration may be equal to zero
+        gracePeriodDurationForNewMemberships = _gracePeriod;
     }
 }

@@ -7,27 +7,26 @@ import { SafeERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/Sa
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 // The specified rate limit was not correct or within the expected limits
-error InvalidRateLimit();
+error InvalidMembershipRateLimit();
 
 // It's not possible to acquire the rate limit due to exceeding the expected limits
 // even after attempting to erase expired memberships
 error ExceededMaxTotalRateLimit();
 
-// This membership is not in grace period yet // FIXME: yet or also already?
+// This membership is not in grace period
 error NotInGracePeriod(uint256 idCommitment);
 
 // The sender is not the holder of the membership
 error AttemptedExtensionByNonHolder(uint256 idCommitment);
 
-// This membership cannot be erased (either it is not expired or not in grace period and/or not the owner) // FIXME:
-// separate into two errors?
-error CantEraseMembership(uint256 idCommitment);
+// This membership cannot be erased
+error CannotEraseMembership(uint256 idCommitment);
 
 abstract contract MembershipUpgradeable is Initializable {
     using SafeERC20 for IERC20;
 
     /// @notice Address of the Price Calculator used to calculate the price of a new membership
-    IPriceCalculator public priceCalculator; // FIXME: naming: price vs deposit?
+    IPriceCalculator public depositAmountCalculator;
 
     /// @notice Maximum total rate limit of all memberships in the membership set (messages per epoch)
     uint32 public maxTotalRateLimit;
@@ -42,7 +41,7 @@ abstract contract MembershipUpgradeable is Initializable {
     uint32 public activeStateDuration;
 
     /// @notice Membership grace period duration (G in the spec)
-    uint32 public gracePeriodDuration;
+    uint32 public gracePeriodDurationForNewMemberships;
 
     /// @notice deposits available for withdrawal
     /// Deposits unavailable for withdrawal are stored in MembershipInfo.
@@ -65,8 +64,8 @@ abstract contract MembershipUpgradeable is Initializable {
         uint256 depositAmount;
         /// @notice timestamp of when the grace period starts for this membership
         uint256 gracePeriodStartTimestamp;
-        /// @notice duration of the grace period
-        uint32 gracePeriodDuration; // FIXME: does each membership need to store it if it's a global constant?
+        /// @notice duration of the grace period for this membership
+        uint32 gracePeriodDuration;
         /// @notice the membership rate limit
         uint32 rateLimit;
         /// @notice the index of the membership in the membership set
@@ -138,16 +137,17 @@ abstract contract MembershipUpgradeable is Initializable {
         onlyInitializing
     {
         require(0 < _minMembershipRateLimit);
-        require(_minMembershipRateLimit <= _maxMembershipRateLimit); // FIXME: < or <=?
+        require(_minMembershipRateLimit <= _maxMembershipRateLimit);
         require(_maxMembershipRateLimit <= _maxTotalRateLimit);
-        require(_activeStateDuration > 0); // FIXME: also _gracePeriodDuration > 0?
+        require(_activeStateDuration > 0);
+        // Note: grace period duration may be equal to zero
 
-        priceCalculator = IPriceCalculator(_priceCalculator);
+        depositAmountCalculator = IPriceCalculator(_priceCalculator);
         maxTotalRateLimit = _maxTotalRateLimit;
         minMembershipRateLimit = _minMembershipRateLimit;
         maxMembershipRateLimit = _maxMembershipRateLimit;
         activeStateDuration = _activeStateDuration;
-        gracePeriodDuration = _gracePeriodDuration;
+        gracePeriodDurationForNewMemberships = _gracePeriodDuration;
     }
 
     /// @notice Checks if a rate limit is within the allowed bounds
@@ -171,69 +171,40 @@ abstract contract MembershipUpgradeable is Initializable {
         internal
         returns (uint32 index, bool indexReused)
     {
+        // Check if the rate limit is valid
         if (!isValidMembershipRateLimit(_rateLimit)) {
-            revert InvalidRateLimit();
+            revert InvalidMembershipRateLimit();
         }
-        (address token, uint256 amount) = priceCalculator.calculate(_rateLimit);
-        (index, indexReused) = _setupMembershipDetails(_sender, _idCommitment, _rateLimit, token, amount);
-        _transferDepositToContract(_sender, token, amount);
-    }
 
-    // FIXME: do we need this as a separate function? (it's not called anywhere else)
-    function _transferDepositToContract(address _from, address _token, uint256 _amount) internal {
-        IERC20(_token).safeTransferFrom(_from, address(this), _amount);
-    }
-
-    /// @dev Setup a new membership. If there are not enough remaining rate limit to acquire
-    /// a new membership, it will attempt to erase existing expired memberships
-    /// and reuse one of their slots
-    /// @param _sender holder of the membership. Generally `msg.sender` // FIXME: keeper?
-    /// @param _idCommitment idCommitment
-    /// @param _rateLimit membership rate limit
-    /// @param _token Address of the token used to acquire the membership
-    /// @param _depositAmount Amount of the tokens used to acquire the membership
-    /// @return index membership index in the membership set
-    /// @return indexReused indicates whether the index returned was a reused slot on the tree or not
-    function _setupMembershipDetails(
-        address _sender,
-        uint256 _idCommitment,
-        uint32 _rateLimit,
-        address _token,
-        uint256 _depositAmount
-    )
-        internal
-        returns (uint32 index, bool indexReused)
-    {
         // Determine if we exceed the total rate limit
         totalRateLimit += _rateLimit;
         if (totalRateLimit > maxTotalRateLimit) {
             revert ExceededMaxTotalRateLimit();
         }
 
-        // FIXME: check if we even need to reuse an expired membership?
+        (address token, uint256 depositAmount) = depositAmountCalculator.calculate(_rateLimit);
 
-        // Reuse available expired memberships
+        // Possibly reuse an index of an available erased membership
         (index, indexReused) = _getFreeIndex();
-
-        // FIXME: we must check that the rate limit of the reused membership is sufficient
-        // otherwise, the total rate limit may become too high
 
         memberships[_idCommitment] = MembershipInfo({
             holder: _sender, // FIXME: keeper?
             gracePeriodStartTimestamp: block.timestamp + uint256(activeStateDuration),
-            gracePeriodDuration: gracePeriodDuration,
-            token: _token,
-            depositAmount: _depositAmount,
+            gracePeriodDuration: gracePeriodDurationForNewMemberships,
+            token: token,
+            depositAmount: depositAmount,
             rateLimit: _rateLimit,
             index: index
         });
+
+        IERC20(token).safeTransferFrom(_sender, address(this), depositAmount);
     }
 
     /// @dev Get a free index (possibly from reusing an index of an erased membership)
     /// @return index index to be used for another membership registration
-    /// @return indexReused indicates whether index comes form reusing a slot of an erased membership
+    /// @return indexReused indicates whether index was reused from an erased membership
     function _getFreeIndex() internal returns (uint32 index, bool indexReused) {
-        // Reuse the last membership marked as reusable
+        // Reuse the last erased membership
         uint256 numIndices = reusableIndicesOfErasedMemberships.length;
         if (numIndices != 0) {
             index = reusableIndicesOfErasedMemberships[numIndices - 1];
@@ -253,13 +224,13 @@ abstract contract MembershipUpgradeable is Initializable {
         if (!_isInGracePeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration)) {
             revert NotInGracePeriod(_idCommitment);
         }
-        // FIXME: turn into a modifier?
+
         if (_sender != membership.holder) revert AttemptedExtensionByNonHolder(_idCommitment);
+
         // FIXME: see spec: should extension depend on the current block.timestamp?
         uint256 newGracePeriodStartTimestamp = block.timestamp + uint256(activeStateDuration);
 
         membership.gracePeriodStartTimestamp = newGracePeriodStartTimestamp;
-        membership.gracePeriodDuration = gracePeriodDuration; // FIXME: redundant: just assigns old value
 
         emit MembershipExtended(
             _idCommitment, membership.rateLimit, membership.index, membership.gracePeriodStartTimestamp
@@ -323,11 +294,13 @@ abstract contract MembershipUpgradeable is Initializable {
         internal
     {
         bool membershipExpired = _isExpired(_membership.gracePeriodStartTimestamp, _membership.gracePeriodDuration);
-        bool membershipIsInGracePeriodAndHeld = _isInGracePeriod(
-            _membership.gracePeriodStartTimestamp, _membership.gracePeriodDuration
-        ) && _membership.holder == _sender;
-        // FIXME: we already had a non-holder check: reuse it here as a modifier?
-        if (!membershipExpired && !membershipIsInGracePeriodAndHeld) revert CantEraseMembership(_idCommitment);
+        bool membershipIsInGracePeriod =
+            _isInGracePeriod(_membership.gracePeriodStartTimestamp, _membership.gracePeriodDuration);
+        bool isHolder = (_membership.holder == _sender);
+
+        if (!membershipExpired && !(membershipIsInGracePeriod && isHolder)) {
+            revert CannotEraseMembership(_idCommitment);
+        }
 
         // Move deposit balance from the membership to be erased to holder deposit balance
         depositsToWithdraw[_membership.holder][_membership.token] += _membership.depositAmount;
