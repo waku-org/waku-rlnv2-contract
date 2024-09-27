@@ -11,17 +11,17 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 import { MembershipUpgradeable } from "./Membership.sol";
 import { IPriceCalculator } from "./IPriceCalculator.sol";
 
-/// The tree is full
-error FullTree();
+/// The membership set is full
+error FullMembershipSet();
 
-/// Member is already registered
+/// A membership with this idCommitment is already registered
 error DuplicateIdCommitment();
 
 /// Invalid idCommitment
 error InvalidIdCommitment(uint256 idCommitment);
 
-/// Invalid userMessageLimit
-error InvalidUserMessageLimit(uint32 messageLimit);
+/// Invalid membership rate limit // FIXME: this is not used - remove?
+error InvalidMembershipRateLimit(uint32 rateLimit);
 
 /// Invalid pagination query
 error InvalidPaginationQuery(uint256 startIndex, uint256 endIndex);
@@ -31,27 +31,27 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     uint256 public constant Q =
         21_888_242_871_839_275_222_246_405_745_257_275_088_548_364_400_416_034_343_698_204_186_575_808_495_617;
 
-    /// @notice The depth of the merkle tree
-    uint8 public constant DEPTH = 20;
+    /// @notice The depth of the Merkle tree that stores rate commitments of memberships
+    uint8 public constant MERKLE_TREE_DEPTH = 20;
 
-    /// @notice The size of the merkle tree, i.e 2^depth
-    uint32 public SET_SIZE;
+    /// @notice The maximum membership set size is the size of the Merkle tree (2 ^ depth)
+    uint32 public MAX_MEMBERSHIP_SET_SIZE;
 
-    /// @notice the deployed block number
+    /// @notice The block number at which this contract was deployed
     uint32 public deployedBlockNumber;
 
-    /// @notice the stored imt data
-    LazyIMTData public imtData;
+    /// @notice The Merkle tree that stores rate commitments of memberships
+    LazyIMTData public merkleTree;
 
-    /// Emitted when a new member is added to the set
-    /// @param rateCommitment the rateCommitment of the member
-    /// @param index The index of the member in the set
-    event MemberRegistered(uint256 rateCommitment, uint32 index);
+    /// Emitted when a new membership is added to the membership set
+    /// @param rateCommitment The rateCommitment of the membership
+    /// @param index The index of the membership in the membership set
+    event MembershipRegistered(uint256 rateCommitment, uint32 index);
 
     /// @notice the modifier to check if the idCommitment is valid
-    /// @param idCommitment The idCommitment of the member
+    /// @param idCommitment The idCommitment of the membership
     modifier onlyValidIdCommitment(uint256 idCommitment) {
-        if (!isValidCommitment(idCommitment)) revert InvalidIdCommitment(idCommitment);
+        if (!isValidIdCommitment(idCommitment)) revert InvalidIdCommitment(idCommitment);
         _;
     }
 
@@ -61,17 +61,17 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
 
     /// @dev contract initializer
     /// @param _priceCalculator Address of an instance of IPriceCalculator
-    /// @param _maxTotalRateLimitPerEpoch Maximum total rate limit of all memberships in the tree
-    /// @param _minRateLimitPerMembership Minimum rate limit of one membership
-    /// @param _maxRateLimitPerMembership Maximum rate limit of one membership
-    /// @param _expirationTerm Membership expiration term
+    /// @param _maxTotalRateLimit Maximum total rate limit of all memberships FIXME: clarify: excl expired?
+    /// @param _minMembershipRateLimit Minimum rate limit of one membership
+    /// @param _maxMembershipRateLimit Maximum rate limit of one membership
+    /// @param _activeStateDuration Membership expiration term
     /// @param _gracePeriod Membership grace period
     function initialize(
         address _priceCalculator,
-        uint32 _maxTotalRateLimitPerEpoch,
-        uint32 _minRateLimitPerMembership,
-        uint32 _maxRateLimitPerMembership,
-        uint32 _expirationTerm,
+        uint32 _maxTotalRateLimit,
+        uint32 _minMembershipRateLimit,
+        uint32 _maxMembershipRateLimit,
+        uint32 _activeStateDuration,
         uint32 _gracePeriod
     )
         public
@@ -81,177 +81,183 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         __UUPSUpgradeable_init();
         __MembershipUpgradeable_init(
             _priceCalculator,
-            _maxTotalRateLimitPerEpoch,
-            _minRateLimitPerMembership,
-            _maxRateLimitPerMembership,
-            _expirationTerm,
+            _maxTotalRateLimit,
+            _minMembershipRateLimit,
+            _maxMembershipRateLimit,
+            _activeStateDuration,
             _gracePeriod
         );
 
-        SET_SIZE = uint32(1 << DEPTH);
+        MAX_MEMBERSHIP_SET_SIZE = uint32(1 << MERKLE_TREE_DEPTH);
         deployedBlockNumber = uint32(block.number);
-        LazyIMT.init(imtData, DEPTH);
-        nextCommitmentIndex = 0;
+        LazyIMT.init(merkleTree, MERKLE_TREE_DEPTH);
+        nextFreeIndex = 0;
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner { } // solhint-disable-line
 
-    /// @notice Checks if a commitment is valid
-    /// @param idCommitment The idCommitment of the member
-    /// @return true if the commitment is valid, false otherwise
-    function isValidCommitment(uint256 idCommitment) public pure returns (bool) {
+    /// @notice Checks if an idCommitment is valid
+    /// @param idCommitment The idCommitment of the membership
+    /// @return true if the idCommitment is valid, false otherwise
+    function isValidIdCommitment(uint256 idCommitment) public pure returns (bool) {
         return idCommitment != 0 && idCommitment < Q;
     }
 
-    /// @notice Returns the rateCommitment of a member
-    /// @param index The index of the member
-    /// @return The rateCommitment of the member
-    function indexToCommitment(uint32 index) internal view returns (uint256) {
-        return imtData.elements[LazyIMT.indexForElement(0, index)];
+    /// @notice Returns the rateCommitment of a membership at a given index
+    /// @param index The index of the membership in the membership set
+    /// @return The rateCommitment of the membership
+    function getRateCommmitment(uint32 index) internal view returns (uint256) {
+        return merkleTree.elements[LazyIMT.indexForElement(0, index)];
     }
 
-    /// @notice Returns the metadata of a member
-    /// @param idCommitment The idCommitment of the member
-    /// @return The metadata of the member (userMessageLimit, index, rateCommitment)
-    function idCommitmentToMetadata(uint256 idCommitment) public view returns (uint32, uint32, uint256) {
-        MembershipInfo memory mdetails = members[idCommitment];
-        // we cannot call indexToCommitment for 0 index if the member doesn't exist
-        if (mdetails.userMessageLimit == 0) {
+    /// @notice Returns the membership info (rate limit, index, rateCommitment) by its idCommitment
+    /// @param idCommitment The idCommitment of the membership
+    /// @return The membership info (rateLimit, index, rateCommitment)
+    function getMembershipInfo(uint256 idCommitment) public view returns (uint32, uint32, uint256) {
+        MembershipInfo memory membership = memberships[idCommitment];
+        // we cannot call getRateCommmitment for 0 index if the membership doesn't exist
+        if (membership.rateLimit == 0) {
             return (0, 0, 0);
         }
-        return (mdetails.userMessageLimit, mdetails.index, indexToCommitment(mdetails.index));
+        return (membership.rateLimit, membership.index, getRateCommmitment(membership.index));
     }
 
-    /// @notice Checks if a member exists
-    /// @param idCommitment The idCommitment of the member
-    /// @return true if the member exists, false otherwise
-    function memberExists(uint256 idCommitment) public view returns (bool) {
-        (,, uint256 rateCommitment) = idCommitmentToMetadata(idCommitment);
+    /// @notice Checks if a membership exists
+    /// @param idCommitment The idCommitment of the membership
+    /// @return true if the membership exists, false otherwise
+    function membershipExists(uint256 idCommitment) public view returns (bool) {
+        (,, uint256 rateCommitment) = getMembershipInfo(idCommitment);
         return rateCommitment != 0;
     }
 
-    /// @notice Allows a user to register as a member
-    /// @param idCommitment The idCommitment of the member
-    /// @param userMessageLimit The message limit of the member
-    function register(uint256 idCommitment, uint32 userMessageLimit) external onlyValidIdCommitment(idCommitment) {
-        if (memberExists(idCommitment)) revert DuplicateIdCommitment();
+    /// @notice Register a membership
+    /// @param idCommitment The idCommitment of the new membership
+    /// @param rateLimit The rate limit of the new membership
+    function register(uint256 idCommitment, uint32 rateLimit) external onlyValidIdCommitment(idCommitment) {
+        // FIXME: turn into modifier?
+        if (membershipExists(idCommitment)) revert DuplicateIdCommitment();
 
         uint32 index;
-        bool reusedIndex;
-        (index, reusedIndex) = _acquireMembership(_msgSender(), idCommitment, userMessageLimit);
+        bool indexReused;
+        (index, indexReused) = _acquireMembership(_msgSender(), idCommitment, rateLimit);
 
-        _register(idCommitment, userMessageLimit, index, reusedIndex);
+        _register(idCommitment, rateLimit, index, indexReused);
     }
 
-    /// @notice Allows a user to register as a member
-    /// @param idCommitment The idCommitment of the member
-    /// @param userMessageLimit The message limit of the member
-    /// @param membershipsToErase List of expired idCommitments to erase
+    /// @notice Register a membership
+    /// @param idCommitment The idCommitment of the new membership
+    /// @param rateLimit The rate limit of the new membership
+    /// @param idCommitmentsToErase List of idCommitments of expired memberships to erase
     function register(
         uint256 idCommitment,
-        uint32 userMessageLimit,
-        uint256[] calldata membershipsToErase
+        uint32 rateLimit,
+        uint256[] calldata idCommitmentsToErase
     )
         external
         onlyValidIdCommitment(idCommitment)
     {
-        if (memberExists(idCommitment)) revert DuplicateIdCommitment();
+        // FIXME: turn into modifier?
+        if (membershipExists(idCommitment)) revert DuplicateIdCommitment();
 
-        for (uint256 i = 0; i < membershipsToErase.length; i++) {
-            uint256 idCommitmentToErase = membershipsToErase[i];
-            MembershipInfo memory mdetails = members[idCommitmentToErase];
-            if (mdetails.userMessageLimit == 0) revert InvalidIdCommitment(idCommitmentToErase);
-            _eraseMembership(_msgSender(), idCommitmentToErase, mdetails);
-            LazyIMT.update(imtData, 0, mdetails.index);
+        // FIXME: extract in a separate function?
+        for (uint256 i = 0; i < idCommitmentsToErase.length; i++) {
+            uint256 idCommitmentToErase = idCommitmentsToErase[i];
+            MembershipInfo memory membershipToErase = memberships[idCommitmentToErase];
+            if (membershipToErase.rateLimit == 0) revert InvalidIdCommitment(idCommitmentToErase);
+            _eraseMembershipAndSaveSlotToReuse(_msgSender(), idCommitmentToErase, membershipToErase);
+            LazyIMT.update(merkleTree, 0, membershipToErase.index);
         }
 
+        // FIXME: code repeats cf. register()
         uint32 index;
-        bool reusedIndex;
-        (index, reusedIndex) = _acquireMembership(_msgSender(), idCommitment, userMessageLimit);
+        bool indexReused;
+        (index, indexReused) = _acquireMembership(_msgSender(), idCommitment, rateLimit);
 
-        _register(idCommitment, userMessageLimit, index, reusedIndex);
+        _register(idCommitment, rateLimit, index, indexReused);
     }
 
-    /// @dev Registers a member
-    /// @param idCommitment The idCommitment of the member
-    /// @param userMessageLimit The message limit of the member
-    /// @param index Indicates the index in the merkle tree
-    /// @param reusedIndex indicates whether we're inserting a new element in the merkle tree or updating a existing
-    /// leaf
-    function _register(uint256 idCommitment, uint32 userMessageLimit, uint32 index, bool reusedIndex) internal {
-        if (nextCommitmentIndex >= SET_SIZE) revert FullTree();
+    /// @dev Registers a membership
+    /// @param idCommitment The idCommitment of the membership
+    /// @param rateLimit The rate limit of the membership
+    /// @param index The index of the membership in the membership set
+    /// @param indexReused Indicates whether we're inserting a new element in the Merkle tree or updating a existing
+    /// element
+    function _register(uint256 idCommitment, uint32 rateLimit, uint32 index, bool indexReused) internal {
+        // FIXME: check this earlier, e.g. as a modifier to register() functions?
+        if (nextFreeIndex >= MAX_MEMBERSHIP_SET_SIZE) revert FullMembershipSet();
 
-        uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
-        if (reusedIndex) {
-            LazyIMT.update(imtData, rateCommitment, index);
+        uint256 rateCommitment = PoseidonT3.hash([idCommitment, rateLimit]);
+        if (indexReused) {
+            LazyIMT.update(merkleTree, rateCommitment, index);
         } else {
-            LazyIMT.insert(imtData, rateCommitment);
-            nextCommitmentIndex += 1;
+            LazyIMT.insert(merkleTree, rateCommitment);
+            nextFreeIndex += 1;
         }
 
-        emit MemberRegistered(rateCommitment, index);
+        emit MembershipRegistered(rateCommitment, index);
     }
 
-    /// @notice Returns the commitments of a range of members
-    /// @param startIndex The start index of the range
-    /// @param endIndex The end index of the range
-    /// @return The commitments of the members
-    function getCommitments(uint32 startIndex, uint32 endIndex) public view returns (uint256[] memory) {
+    /// @notice Returns the rateCommitments of memberships within an index range
+    /// @param startIndex The start index of the range (inclusive)
+    /// @param endIndex The end index of the range (inclusive)
+    /// @return The rateCommitments of the memberships
+    function getRateCommitmentsInRange(uint32 startIndex, uint32 endIndex) public view returns (uint256[] memory) {
         if (startIndex > endIndex) revert InvalidPaginationQuery(startIndex, endIndex);
-        if (endIndex > nextCommitmentIndex) revert InvalidPaginationQuery(startIndex, endIndex);
+        if (endIndex > nextFreeIndex) revert InvalidPaginationQuery(startIndex, endIndex); //FIXME: should it be >=?
 
-        uint256[] memory commitments = new uint256[](endIndex - startIndex + 1);
+        uint256[] memory rateCommitments = new uint256[](endIndex - startIndex + 1);
         for (uint32 i = startIndex; i <= endIndex; i++) {
-            commitments[i - startIndex] = indexToCommitment(i);
+            rateCommitments[i - startIndex] = getRateCommmitment(i);
         }
-        return commitments;
+        return rateCommitments;
     }
 
-    /// @notice Returns the root of the IMT
-    /// @return The root of the IMT
+    /// @notice Returns the root of the Merkle tree that stores rate commitments of memberships
+    /// @return The root of the Merkle tree that stores rate commitments of memberships
     function root() external view returns (uint256) {
-        return LazyIMT.root(imtData, DEPTH);
+        return LazyIMT.root(merkleTree, MERKLE_TREE_DEPTH);
     }
 
-    /// @notice Returns the merkle proof elements of a given membership
-    /// @param index The index of the member
-    /// @return The merkle proof elements of the member
-    function merkleProofElements(uint40 index) public view returns (uint256[DEPTH] memory) {
-        uint256[DEPTH] memory castedProof;
-        uint256[] memory proof = LazyIMT.merkleProofElements(imtData, index, DEPTH);
-        for (uint8 i = 0; i < DEPTH; i++) {
-            castedProof[i] = proof[i];
+    /// @notice Returns the Merkle proof that a given membership is in the membership set
+    /// @param index The index of the membership
+    /// @return The Merkle proof (an array of MERKLE_TREE_DEPTH elements)
+    function getMerkleProof(uint40 index) public view returns (uint256[MERKLE_TREE_DEPTH] memory) {
+        uint256[] memory dynamicSizeProof = LazyIMT.merkleProofElements(merkleTree, index, MERKLE_TREE_DEPTH);
+        uint256[MERKLE_TREE_DEPTH] memory fixedSizeProof;
+        for (uint8 i = 0; i < MERKLE_TREE_DEPTH; i++) {
+            fixedSizeProof[i] = dynamicSizeProof[i];
         }
-        return castedProof;
+        return fixedSizeProof;
     }
 
-    /// @notice Extend a membership expiration date. Memberships must be on grace period
-    /// @param idCommitments list of idcommitments
-    function extend(uint256[] calldata idCommitments) external {
+    /// @notice Extend a grace-period membership
+    /// @param idCommitments list of idCommitments of memberships to extend
+    function extendMemberships(uint256[] calldata idCommitments) external {
         for (uint256 i = 0; i < idCommitments.length; i++) {
-            uint256 idCommitment = idCommitments[i];
-            _extendMembership(_msgSender(), idCommitment);
+            uint256 idCommitmentToExtend = idCommitments[i];
+            _extendMembership(_msgSender(), idCommitmentToExtend);
         }
     }
 
-    /// @notice Remove expired memberships or owned memberships in grace period.
-    /// The user can determine offchain which expired memberships slots
-    /// are available, and proceed to free them.
-    /// This is also used to erase memberships in grace period if they're
-    /// held by the sender. The sender can then withdraw the tokens.
-    /// @param idCommitments list of idcommitments of the memberships
+    /// @notice Erase expired memberships or owned grace-period memberships
+    /// The user can select expired memberships offchain,
+    /// and proceed to erase them.
+    /// This function is also used to erase the user's own grace-period memberships.
+    /// The user (i.e. the transaction sender) can then withdraw the deposited tokens.
+    /// @param idCommitments list of idCommitments of the memberships to erase
     function eraseMemberships(uint256[] calldata idCommitments) external {
         for (uint256 i = 0; i < idCommitments.length; i++) {
-            uint256 idCommitment = idCommitments[i];
-            MembershipInfo memory mdetails = members[idCommitment];
-            if (mdetails.userMessageLimit == 0) revert InvalidIdCommitment(idCommitment);
-            _eraseMembership(_msgSender(), idCommitment, mdetails);
-            LazyIMT.update(imtData, 0, mdetails.index);
+            // FIXME: not DRY: see register()
+            uint256 idCommitmentToErase = idCommitments[i];
+            MembershipInfo memory membershipToErase = memberships[idCommitmentToErase];
+            if (membershipToErase.rateLimit == 0) revert InvalidIdCommitment(idCommitmentToErase);
+            _eraseMembershipAndSaveSlotToReuse(_msgSender(), idCommitmentToErase, membershipToErase);
+            LazyIMT.update(merkleTree, 0, membershipToErase.index);
         }
     }
 
-    /// @notice Withdraw any available balance in tokens after a membership is erased.
-    /// @param token The address of the token to withdraw. Use 0x000...000 to withdraw ETH
+    /// @notice Withdraw any available deposit balance in tokens after a membership is erased.
+    /// @param token The address of the token to withdraw
     function withdraw(address token) external {
         _withdraw(_msgSender(), token);
     }
@@ -262,37 +268,38 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         priceCalculator = IPriceCalculator(_priceCalculator);
     }
 
-    /// @notice Set the maximum total rate limit of all memberships in the tree
-    /// @param _maxTotalRateLimitPerEpoch new value
-    function setMaxTotalRateLimitPerEpoch(uint32 _maxTotalRateLimitPerEpoch) external onlyOwner {
-        require(_maxTotalRateLimitPerEpoch >= maxRateLimitPerMembership);
-        maxTotalRateLimitPerEpoch = _maxTotalRateLimitPerEpoch;
+    /// @notice Set the maximum total rate limit of all (FIXME: excl expired?) memberships in the membership set
+    /// @param _maxTotalRateLimit new maximum total rate limit (messages per epoch)
+    function setMaxTotalRateLimit(uint32 _maxTotalRateLimit) external onlyOwner {
+        require(_maxTotalRateLimit >= maxMembershipRateLimit);
+        maxTotalRateLimit = _maxTotalRateLimit;
     }
 
     /// @notice Set the maximum rate limit of one membership
-    /// @param _maxRateLimitPerMembership  new value
-    function setMaxRateLimitPerMembership(uint32 _maxRateLimitPerMembership) external onlyOwner {
-        require(_maxRateLimitPerMembership >= minRateLimitPerMembership);
-        maxRateLimitPerMembership = _maxRateLimitPerMembership;
+    /// @param _maxMembershipRateLimit  new maximum rate limit per membership (messages per epoch)
+    function setMaxMembershipRateLimit(uint32 _maxMembershipRateLimit) external onlyOwner {
+        require(_maxMembershipRateLimit >= minMembershipRateLimit);
+        maxMembershipRateLimit = _maxMembershipRateLimit;
     }
 
     /// @notice Set the minimum rate limit of one membership
-    /// @param _minRateLimitPerMembership  new value
-    function setMinRateLimitPerMembership(uint32 _minRateLimitPerMembership) external onlyOwner {
-        require(_minRateLimitPerMembership > 0);
-        minRateLimitPerMembership = _minRateLimitPerMembership;
+    /// @param _minMembershipRateLimit  new minimum rate limit per membership (messages per epoch)
+    function setMinMembershipRateLimit(uint32 _minMembershipRateLimit) external onlyOwner {
+        require(_minMembershipRateLimit > 0); // FIXME: we must also check here that min rate <= max rate
+        minMembershipRateLimit = _minMembershipRateLimit;
     }
 
-    /// @notice Set the membership expiration term
-    /// @param _expirationTerm  new value
-    function setExpirationTerm(uint32 _expirationTerm) external onlyOwner {
-        require(_expirationTerm > 0);
-        expirationTerm = _expirationTerm;
+    /// @notice Set the expiration term for new memberships (expiration dates of existing memberships don't change)
+    /// @param _activeStateDuration  new expiration term
+    function setactiveStateDuration(uint32 _activeStateDuration) external onlyOwner {
+        require(_activeStateDuration > 0);
+        activeStateDuration = _activeStateDuration;
     }
 
-    /// @notice Set the membership grace period
-    /// @param _gracePeriod  new value
+    /// @notice Set the grace period for new memberships (grace periods of existing memberships don't change)
+    /// @param _gracePeriod  new grace period term
     function setGracePeriod(uint32 _gracePeriod) external onlyOwner {
-        gracePeriod = _gracePeriod;
+        // FIXME: shall we check that _gracePeriod > 0?
+        gracePeriodDuration = _gracePeriod;
     }
 }
