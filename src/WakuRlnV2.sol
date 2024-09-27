@@ -134,6 +134,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @param idCommitment The idCommitment of the new membership
     /// @param rateLimit The rate limit of the new membership
     function register(uint256 idCommitment, uint32 rateLimit) external onlyValidIdCommitment(idCommitment) {
+        // FIXME: turn into modifier?
         if (membershipExists(idCommitment)) revert DuplicateIdCommitment();
 
         uint32 index;
@@ -155,8 +156,10 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         external
         onlyValidIdCommitment(idCommitment)
     {
+        // FIXME: turn into modifier?
         if (membershipExists(idCommitment)) revert DuplicateIdCommitment();
 
+        // FIXME: extract in a separate function?
         for (uint256 i = 0; i < idCommitmentsToErase.length; i++) {
             uint256 idCommitmentToErase = idCommitmentsToErase[i];
             MembershipInfo memory membershipToErase = memberships[idCommitmentToErase];
@@ -165,6 +168,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
             LazyIMT.update(merkleTree, 0, membershipToErase.index);
         }
 
+        // FIXME: code repeats cf. register()
         uint32 index;
         bool indexReused;
         (index, indexReused) = _acquireMembership(_msgSender(), idCommitment, rateLimit);
@@ -179,6 +183,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @param indexReused Indicates whether we're inserting a new element in the Merkle tree or updating a existing
     /// element
     function _register(uint256 idCommitment, uint32 rateLimit, uint32 index, bool indexReused) internal {
+        // FIXME: check this earlier, e.g. as a modifier to register() functions?
         if (nextFreeIndex >= MAX_MEMBERSHIP_SET_SIZE) revert FullMembershipSet();
 
         uint256 rateCommitment = PoseidonT3.hash([idCommitment, rateLimit]);
