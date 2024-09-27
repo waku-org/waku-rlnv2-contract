@@ -57,8 +57,8 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @notice The index in the membership set for the next membership to be registered
     uint32 public nextFreeIndex;
 
-    /// @notice indices of expired memberships that can be erased (and maybe overwritten)
-    uint32[] public availableExpiredMembershipsIndices;
+    /// @notice indices of memberships (expired or grace-period marked for erasure) that can be reused
+    uint32[] public reusableMembershipsIndices;
 
     struct MembershipInfo {
         /// @notice deposit amount (in tokens) to register this membership
@@ -81,7 +81,13 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @param idCommitment the idCommitment of the membership
     /// @param membershipRateLimit the rate limit of this membership
     /// @param index the index of the membership in the membership set
-    event MembershipExpired(uint256 idCommitment, uint32 membershipRateLimit, uint32 index);
+    event MembershipExpiredAndErased(uint256 idCommitment, uint32 membershipRateLimit, uint32 index);
+
+    /// @notice Emitted when a membership is erased by its holder during grace period
+    /// @param idCommitment the idCommitment of the membership
+    /// @param membershipRateLimit the rate limit of this membership
+    /// @param index the index of the membership in the membership set
+    event MembershipErasedByHolder(uint256 idCommitment, uint32 membershipRateLimit, uint32 index);
 
     /// @notice Emitted when a membership in its grace period is extended (i.e., is back to Active state)
     /// @param idCommitment the idCommitment of the membership
@@ -228,10 +234,10 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @return indexReused indicates whether index comes form reusing a slot of an expired membership
     function _getFreeIndex() internal returns (uint32 index, bool indexReused) {
         // Reuse available expired memberships
-        uint256 arrLen = availableExpiredMembershipsIndices.length;
+        uint256 arrLen = reusableMembershipsIndices.length;
         if (arrLen != 0) {
-            index = availableExpiredMembershipsIndices[arrLen - 1];
-            availableExpiredMembershipsIndices.pop();
+            index = reusableMembershipsIndices[arrLen - 1];
+            reusableMembershipsIndices.pop();
             indexReused = true;
         } else {
             index = nextFreeIndex;
@@ -323,12 +329,17 @@ abstract contract MembershipUpgradeable is Initializable {
         // Deduct the expired membership rate limit
         totalRateLimit -= _membership.rateLimit;
 
-        // Note: the Merkle tree data will be erased lazily when the index is reused
-        availableExpiredMembershipsIndices.push(_membership.index);
+        // Note: not all memberships here are expired; some are erased from grace period by their holder
+        reusableMembershipsIndices.push(_membership.index);
 
+        // Note: the Merkle tree data will be erased when the index is reused
         delete memberships[_idCommitment];
 
-        emit MembershipExpired(_idCommitment, _membership.rateLimit, _membership.index);
+        if (membershipExpired) {
+          emit MembershipExpiredAndErased(_idCommitment, _membership.rateLimit, _membership.index);
+        } else if (membershipIsInGracePeriodAndHeld) {
+          emit MembershipErasedByHolder(_idCommitment, _membership.rateLimit, _membership.index);
+        }
     }
 
     /// @dev Withdraw any available deposit balance in tokens after a membership is erased.

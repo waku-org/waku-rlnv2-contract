@@ -339,11 +339,11 @@ contract WakuRlnV2Test is Test {
         // Attempt to expire 3 commitments that can be erased
         commitmentsToErase[2] = 4;
         vm.expectEmit(true, false, false, false);
-        emit MembershipUpgradeable.MembershipExpired(1, 0, 0);
+        emit MembershipUpgradeable.MembershipExpiredAndErased(1, 0, 0);
         vm.expectEmit(true, false, false, false);
-        emit MembershipUpgradeable.MembershipExpired(2, 0, 0);
+        emit MembershipUpgradeable.MembershipExpiredAndErased(2, 0, 0);
         vm.expectEmit(true, false, false, false);
-        emit MembershipUpgradeable.MembershipExpired(4, 0, 0);
+        emit MembershipUpgradeable.MembershipExpiredAndErased(4, 0, 0);
         w.register(6, 60, commitmentsToErase);
 
         // Ensure that the chosen memberships were erased and others unaffected
@@ -433,28 +433,28 @@ contract WakuRlnV2Test is Test {
 
         // Verify that expired indices match what we expect
         for (uint32 i = 0; i < idCommitmentsLength; i++) {
-            assertEq(i, w.availableExpiredMembershipsIndices(i));
+            assertEq(i, w.reusableMembershipsIndices(i));
         }
 
         uint32 currnextCommitmentIndex = w.nextFreeIndex();
         for (uint256 i = 1; i <= idCommitmentsLength; i++) {
             uint256 idCommitment = i + 10;
             uint256 expectedindexReusedPos = idCommitmentsLength - i;
-            uint32 expectedIndex = w.availableExpiredMembershipsIndices(expectedindexReusedPos);
+            uint32 expectedIndex = w.reusableMembershipsIndices(expectedindexReusedPos);
             token.approve(address(w), price);
             w.register(idCommitment, 20);
             (,,,, index,,) = w.memberships(idCommitment);
             assertEq(expectedIndex, index);
             // Should have been removed from the list
             vm.expectRevert();
-            w.availableExpiredMembershipsIndices(expectedindexReusedPos);
+            w.reusableMembershipsIndices(expectedindexReusedPos);
             // Should not have been affected
             assertEq(currnextCommitmentIndex, w.nextFreeIndex());
         }
 
         // No indexes should be available for reuse
         vm.expectRevert();
-        w.availableExpiredMembershipsIndices(0);
+        w.reusableMembershipsIndices(0);
 
         // Should use a new index since we got rid of all available indexes
         token.approve(address(w), price);
@@ -498,9 +498,9 @@ contract WakuRlnV2Test is Test {
         commitmentsToErase[1] = idCommitment + 2;
 
         vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
-        emit MembershipUpgradeable.MembershipExpired(commitmentsToErase[0], 0, 0);
+        emit MembershipUpgradeable.MembershipExpiredAndErased(commitmentsToErase[0], 0, 0);
         vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
-        emit MembershipUpgradeable.MembershipExpired(commitmentsToErase[0], 0, 0);
+        emit MembershipUpgradeable.MembershipExpiredAndErased(commitmentsToErase[0], 0, 0);
         w.eraseMemberships(commitmentsToErase);
 
         address holder;
@@ -546,7 +546,7 @@ contract WakuRlnV2Test is Test {
         for (uint256 i = 0; i < idCommitmentsLength; i++) {
             commitmentsToErase[i] = i + 1;
             vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
-            emit MembershipUpgradeable.MembershipExpired(i + 1, 0, 0);
+            emit MembershipUpgradeable.MembershipExpiredAndErased(i + 1, 0, 0);
         }
 
         w.eraseMemberships(commitmentsToErase);
