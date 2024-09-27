@@ -164,7 +164,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
             uint256 idCommitmentToErase = idCommitmentsToErase[i];
             MembershipInfo memory membershipToErase = memberships[idCommitmentToErase];
             if (membershipToErase.rateLimit == 0) revert InvalidIdCommitment(idCommitmentToErase);
-            _eraseMembership(_msgSender(), idCommitmentToErase, membershipToErase);
+            _eraseMembershipAndSaveSlotToReuse(_msgSender(), idCommitmentToErase, membershipToErase);
             LazyIMT.update(merkleTree, 0, membershipToErase.index);
         }
 
@@ -251,7 +251,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
             uint256 idCommitmentToErase = idCommitments[i];
             MembershipInfo memory membershipToErase = memberships[idCommitmentToErase];
             if (membershipToErase.rateLimit == 0) revert InvalidIdCommitment(idCommitmentToErase);
-            _eraseMembership(_msgSender(), idCommitmentToErase, membershipToErase);
+            _eraseMembershipAndSaveSlotToReuse(_msgSender(), idCommitmentToErase, membershipToErase);
             LazyIMT.update(merkleTree, 0, membershipToErase.index);
         }
     }

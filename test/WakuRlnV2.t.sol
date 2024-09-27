@@ -59,7 +59,8 @@ contract WakuRlnV2Test is Test {
             w.root(),
             13_801_897_483_540_040_307_162_267_952_866_411_686_127_372_014_953_358_983_481_592_640_000_001_877_295
         );
-        (uint32 fetchedMembershipRateLimit2, uint32 index2, uint256 rateCommitment2) = w.getMembershipInfo(idCommitment);
+        (uint32 fetchedMembershipRateLimit2, uint32 index2, uint256 rateCommitment2) =
+            w.getMembershipInfo(idCommitment);
         assertEq(fetchedMembershipRateLimit2, membershipRateLimit);
         assertEq(index2, 0);
         assertEq(rateCommitment2, rateCommitment);
@@ -433,28 +434,28 @@ contract WakuRlnV2Test is Test {
 
         // Verify that expired indices match what we expect
         for (uint32 i = 0; i < idCommitmentsLength; i++) {
-            assertEq(i, w.reusableIndicesOfErasableMemberships(i));
+            assertEq(i, w.reusableIndicesOfErasedMemberships(i));
         }
 
         uint32 currnextCommitmentIndex = w.nextFreeIndex();
         for (uint256 i = 1; i <= idCommitmentsLength; i++) {
             uint256 idCommitment = i + 10;
             uint256 expectedindexReusedPos = idCommitmentsLength - i;
-            uint32 expectedIndex = w.reusableIndicesOfErasableMemberships(expectedindexReusedPos);
+            uint32 expectedIndex = w.reusableIndicesOfErasedMemberships(expectedindexReusedPos);
             token.approve(address(w), price);
             w.register(idCommitment, 20);
             (,,,, index,,) = w.memberships(idCommitment);
             assertEq(expectedIndex, index);
             // Should have been removed from the list
             vm.expectRevert();
-            w.reusableIndicesOfErasableMemberships(expectedindexReusedPos);
+            w.reusableIndicesOfErasedMemberships(expectedindexReusedPos);
             // Should not have been affected
             assertEq(currnextCommitmentIndex, w.nextFreeIndex());
         }
 
         // No indexes should be available for reuse
         vm.expectRevert();
-        w.reusableIndicesOfErasableMemberships(0);
+        w.reusableIndicesOfErasedMemberships(0);
 
         // Should use a new index since we got rid of all available indexes
         token.approve(address(w), price);

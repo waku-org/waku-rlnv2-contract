@@ -58,7 +58,7 @@ abstract contract MembershipUpgradeable is Initializable {
     uint32 public nextFreeIndex;
 
     /// @notice indices of memberships (expired or grace-period marked for erasure) that can be reused
-    uint32[] public reusableIndicesOfErasableMemberships;
+    uint32[] public reusableIndicesOfErasedMemberships;
 
     struct MembershipInfo {
         /// @notice deposit amount (in tokens) to register this membership
@@ -234,10 +234,10 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @return indexReused indicates whether index comes form reusing a slot of an erased membership
     function _getFreeIndex() internal returns (uint32 index, bool indexReused) {
         // Reuse the last membership marked as reusable
-        uint256 numIndices = reusableIndicesOfErasableMemberships.length;
+        uint256 numIndices = reusableIndicesOfErasedMemberships.length;
         if (numIndices != 0) {
-            index = reusableIndicesOfErasableMemberships[numIndices - 1];
-            reusableIndicesOfErasableMemberships.pop();
+            index = reusableIndicesOfErasedMemberships[numIndices - 1];
+            reusableIndicesOfErasedMemberships.pop();
             indexReused = true;
         } else {
             index = nextFreeIndex;
@@ -315,7 +315,13 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @dev Erase expired memberships or owned grace-period memberships.
     /// @param _sender address of the sender of transaction (will be used to check memberships in grace period)
     /// @param _idCommitment idCommitment of the membership to erase
-    function _eraseMembership(address _sender, uint256 _idCommitment, MembershipInfo memory _membership) internal {
+    function _eraseMembershipAndSaveSlotToReuse(
+        address _sender,
+        uint256 _idCommitment,
+        MembershipInfo memory _membership
+    )
+        internal
+    {
         bool membershipExpired = _isExpired(_membership.gracePeriodStartTimestamp, _membership.gracePeriodDuration);
         bool membershipIsInGracePeriodAndHeld = _isInGracePeriod(
             _membership.gracePeriodStartTimestamp, _membership.gracePeriodDuration
@@ -330,7 +336,7 @@ abstract contract MembershipUpgradeable is Initializable {
         totalRateLimit -= _membership.rateLimit;
 
         // Mark this membership as reusable
-        reusableIndicesOfErasableMemberships.push(_membership.index);
+        reusableIndicesOfErasedMemberships.push(_membership.index);
 
         // Erase this membership from the memberships mapping
         // Note: the Merkle tree data will be erased when the index is reused
