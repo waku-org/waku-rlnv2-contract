@@ -220,11 +220,16 @@ contract WakuRlnV2Test is Test {
         // Attempt to extend the membership (but now we are the owner)
         vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
         emit MembershipUpgradeable.MembershipExtended(idCommitment, 0, 0, 0);
+
+        (, uint256 oldGracePeriodStartTimestamp, uint32 oldGracePeriodDuration,,,,) = w.memberships(idCommitment);
         w.extendMemberships(commitmentsToExtend);
+        (, uint256 newGracePeriodStartTimestamp, uint32 newGracePeriodDuration,,,,) = w.memberships(idCommitment);
 
-        (, uint256 newgracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment);
-
-        assertEq(block.timestamp + uint256(w.activeStateDuration()), newgracePeriodStartTimestamp);
+        assertEq(oldGracePeriodDuration, newGracePeriodDuration);
+        assertEq(
+            oldGracePeriodStartTimestamp + oldGracePeriodDuration + uint256(w.activeStateDuration()),
+            newGracePeriodStartTimestamp
+        );
         assertFalse(w.isInGracePeriod(idCommitment));
         assertFalse(w.isExpired(idCommitment));
 
@@ -261,8 +266,8 @@ contract WakuRlnV2Test is Test {
         emit MembershipUpgradeable.MembershipExtended(idCommitment, 0, 0, 0);
         w.extendMemberships(commitmentsToExtend);
 
-        (, uint256 newgracePeriodStartTimestamp, uint32 newGracePeriod,,,,) = w.memberships(idCommitment);
-        uint256 expectedExpirationTimestamp = newgracePeriodStartTimestamp + uint256(newGracePeriod) + 1;
+        (, uint256 newGracePeriodStartTimestamp, uint32 newGracePeriodDuration,,,,) = w.memberships(idCommitment);
+        uint256 expectedExpirationTimestamp = newGracePeriodStartTimestamp + uint256(newGracePeriodDuration) + 1;
         uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitment);
         assertEq(expectedExpirationTimestamp, membershipExpirationTimestamp);
         assertTrue(expectedExpirationTimestamp > ogExpirationTimestamp);

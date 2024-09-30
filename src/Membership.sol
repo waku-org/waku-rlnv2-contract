@@ -227,8 +227,12 @@ abstract contract MembershipUpgradeable is Initializable {
 
         if (_sender != membership.holder) revert AttemptedExtensionByNonHolder(_idCommitment);
 
-        // FIXME: see spec: should extension depend on the current block.timestamp?
-        uint256 newGracePeriodStartTimestamp = block.timestamp + uint256(activeStateDuration);
+        // Note: we add the new active period to the end of the ongoing grace period
+        uint256 newGracePeriodStartTimestamp = (
+            membership.gracePeriodStartTimestamp + membership.gracePeriodDuration
+            // FIXME: we must use this membership's activeStateDuration, not global default
+            + uint256(activeStateDuration)
+        );
 
         membership.gracePeriodStartTimestamp = newGracePeriodStartTimestamp;
 
