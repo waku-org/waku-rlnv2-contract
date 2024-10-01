@@ -26,7 +26,7 @@ abstract contract MembershipUpgradeable is Initializable {
     using SafeERC20 for IERC20;
 
     /// @notice Address of the Price Calculator used to calculate the price of a new membership
-    IPriceCalculator public depositAmountCalculator;
+    IPriceCalculator public priceCalculator;
 
     /// @notice Maximum total rate limit of all memberships in the membership set (messages per epoch)
     uint32 public maxTotalRateLimit;
@@ -38,17 +38,17 @@ abstract contract MembershipUpgradeable is Initializable {
     uint32 public minMembershipRateLimit;
 
     /// @notice Membership active period duration (A in the spec)
-    uint32 public activeDuration;
+    uint32 public activeDurationForNewMemberships;
 
     /// @notice Membership grace period duration (G in the spec)
     uint32 public gracePeriodDurationForNewMemberships;
 
     /// @notice deposits available for withdrawal
-    /// Deposits unavailable for withdrawal are stored in MembershipInfo.
+    /// Note: deposits unavailable for withdrawal are stored in MembershipInfo.
     mapping(address holder => mapping(address token => uint256 balance)) public depositsToWithdraw;
 
     /// @notice Current total rate limit of all memberships in the membership set (messages per epoch)
-    uint256 public totalRateLimit;
+    uint256 public currentTotalRateLimit;
 
     /// @notice List of memberships in the membership set
     mapping(uint256 idCommitment => MembershipInfo membership) public memberships;
@@ -56,8 +56,8 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @notice The index in the membership set for the next membership to be registered
     uint32 public nextFreeIndex;
 
-    /// @notice indices of memberships (expired or grace-period marked for erasure) that can be reused
-    uint32[] public reusableIndicesOfErasedMemberships;
+    /// @notice Indices of memberships marked as erased but not yet actually erased from the membership set
+    uint32[] public indicesOfLazilyErasedMemberships;
 
     struct MembershipInfo {
         /// @notice deposit amount (in tokens) to register this membership
@@ -75,6 +75,11 @@ abstract contract MembershipUpgradeable is Initializable {
         /// @notice token used to make the deposit to register this membership
         address token;
     }
+
+    /// Emitted when a new membership is added to the membership set // FIXME: rateCommitment or membershipRateLimit?
+    /// @param rateCommitment The rateCommitment of the membership
+    /// @param index The index of the membership in the membership set
+    event MembershipRegistered(uint256 idCommitment, uint256 rateCommitment, uint32 index);
 
     /// @notice Emitted when a membership is expired (exceeded its grace period and not extended)
     /// @param idCommitment the idCommitment of the membership
@@ -142,19 +147,12 @@ abstract contract MembershipUpgradeable is Initializable {
         require(_activeDuration > 0);
         // Note: grace period duration may be equal to zero
 
-        depositAmountCalculator = IPriceCalculator(_priceCalculator);
+        priceCalculator = IPriceCalculator(_priceCalculator);
         maxTotalRateLimit = _maxTotalRateLimit;
         minMembershipRateLimit = _minMembershipRateLimit;
         maxMembershipRateLimit = _maxMembershipRateLimit;
-        activeDuration = _activeDuration;
+        activeDurationForNewMemberships = _activeDuration;
         gracePeriodDurationForNewMemberships = _gracePeriodDuration;
-    }
-
-    /// @notice Checks if a rate limit is within the allowed bounds
-    /// @param rateLimit The rate limit
-    /// @return true if the rate limit is within the allowed bounds, false otherwise
-    function isValidMembershipRateLimit(uint32 rateLimit) public view returns (bool) {
-        return minMembershipRateLimit <= rateLimit && rateLimit <= maxMembershipRateLimit;
     }
 
     /// @dev acquire a membership and trasnfer the deposit to the contract
@@ -176,20 +174,21 @@ abstract contract MembershipUpgradeable is Initializable {
             revert InvalidMembershipRateLimit();
         }
 
+        currentTotalRateLimit += _rateLimit;
+
         // Determine if we exceed the total rate limit
-        totalRateLimit += _rateLimit;
-        if (totalRateLimit > maxTotalRateLimit) {
+        if (currentTotalRateLimit > maxTotalRateLimit) {
             revert ExceededMaxTotalRateLimit();
         }
 
-        (address token, uint256 depositAmount) = depositAmountCalculator.calculate(_rateLimit);
+        (address token, uint256 depositAmount) = priceCalculator.calculate(_rateLimit);
 
         // Possibly reuse an index of an available erased membership
         (index, indexReused) = _getFreeIndex();
 
         memberships[_idCommitment] = MembershipInfo({
             holder: _sender,
-            gracePeriodStartTimestamp: block.timestamp + uint256(activeDuration),
+            gracePeriodStartTimestamp: block.timestamp + uint256(activeDurationForNewMemberships),
             gracePeriodDuration: gracePeriodDurationForNewMemberships,
             token: token,
             depositAmount: depositAmount,
@@ -200,15 +199,22 @@ abstract contract MembershipUpgradeable is Initializable {
         IERC20(token).safeTransferFrom(_sender, address(this), depositAmount);
     }
 
+    /// @notice Checks if a rate limit is within the allowed bounds
+    /// @param rateLimit The rate limit
+    /// @return true if the rate limit is within the allowed bounds, false otherwise
+    function isValidMembershipRateLimit(uint32 rateLimit) public view returns (bool) {
+        return minMembershipRateLimit <= rateLimit && rateLimit <= maxMembershipRateLimit;
+    }
+
     /// @dev Get a free index (possibly from reusing an index of an erased membership)
     /// @return index index to be used for another membership registration
     /// @return indexReused indicates whether index was reused from an erased membership
     function _getFreeIndex() internal returns (uint32 index, bool indexReused) {
         // Reuse the last erased membership
-        uint256 numIndices = reusableIndicesOfErasedMemberships.length;
+        uint256 numIndices = indicesOfLazilyErasedMemberships.length;
         if (numIndices != 0) {
-            index = reusableIndicesOfErasedMemberships[numIndices - 1];
-            reusableIndicesOfErasedMemberships.pop();
+            index = indicesOfLazilyErasedMemberships[numIndices - 1];
+            indicesOfLazilyErasedMemberships.pop();
             indexReused = true;
         } else {
             index = nextFreeIndex;
@@ -231,7 +237,7 @@ abstract contract MembershipUpgradeable is Initializable {
         uint256 newGracePeriodStartTimestamp = (
             membership.gracePeriodStartTimestamp + membership.gracePeriodDuration
             // FIXME: we must use this membership's activeDuration, not global default
-            + uint256(activeDuration)
+            + uint256(activeDurationForNewMemberships)
         );
 
         membership.gracePeriodStartTimestamp = newGracePeriodStartTimestamp;
@@ -239,52 +245,6 @@ abstract contract MembershipUpgradeable is Initializable {
         emit MembershipExtended(
             _idCommitment, membership.rateLimit, membership.index, membership.gracePeriodStartTimestamp
         );
-    }
-
-    /// @dev Determine whether a grace period has passed (the membership is expired)
-    /// @param _gracePeriodStartTimestamp timestamp in which the grace period starts
-    /// @param _gracePeriodDuration duration of the grace period
-    function _isExpired(uint256 _gracePeriodStartTimestamp, uint32 _gracePeriodDuration) internal view returns (bool) {
-        return block.timestamp > _gracePeriodStartTimestamp + uint256(_gracePeriodDuration);
-    }
-
-    /// @notice Determine if a membership is expired
-    /// @param _idCommitment the idCommitment of the membership
-    function isExpired(uint256 _idCommitment) public view returns (bool) {
-        MembershipInfo memory membership = memberships[_idCommitment];
-        return _isExpired(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
-    }
-
-    /// @notice Returns the timestamp on which a membership can be considered expired
-    /// @param _idCommitment the idCommitment of the membership
-    function membershipExpirationTimestamp(uint256 _idCommitment) public view returns (uint256) {
-        MembershipInfo memory membership = memberships[_idCommitment];
-        return membership.gracePeriodStartTimestamp + uint256(membership.gracePeriodDuration) + 1;
-    }
-
-    /// @dev Determine whether the current timestamp is in a given grace period
-    /// @param _gracePeriodStartTimestamp timestamp in which the grace period starts
-    /// @param _gracePeriodDuration duration of the grace period
-    function _isInGracePeriod(
-        uint256 _gracePeriodStartTimestamp,
-        uint32 _gracePeriodDuration
-    )
-        internal
-        view
-        returns (bool)
-    {
-        uint256 timeNow = block.timestamp;
-        return (
-            _gracePeriodStartTimestamp <= timeNow
-                && timeNow <= _gracePeriodStartTimestamp + uint256(_gracePeriodDuration)
-        );
-    }
-
-    /// @notice Determine if a membership is in grace period now
-    /// @param _idCommitment the idCommitment of the membership
-    function isInGracePeriod(uint256 _idCommitment) public view returns (bool) {
-        MembershipInfo memory membership = memberships[_idCommitment];
-        return _isInGracePeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
     }
 
     /// @dev Erase expired memberships or owned grace-period memberships.
@@ -310,10 +270,10 @@ abstract contract MembershipUpgradeable is Initializable {
         depositsToWithdraw[_membership.holder][_membership.token] += _membership.depositAmount;
 
         // Deduct the rate limit of this membership from the total rate limit
-        totalRateLimit -= _membership.rateLimit;
+        currentTotalRateLimit -= _membership.rateLimit;
 
         // Mark this membership as reusable
-        reusableIndicesOfErasedMemberships.push(_membership.index);
+        indicesOfLazilyErasedMemberships.push(_membership.index);
 
         // Erase this membership from the memberships mapping
         // Note: the Merkle tree data will be erased when the index is reused
@@ -323,6 +283,52 @@ abstract contract MembershipUpgradeable is Initializable {
             emit MembershipExpired(_idCommitment, _membership.rateLimit, _membership.index);
         }
         emit MembershipErased(_idCommitment, _membership.rateLimit, _membership.index);
+    }
+
+    /// @notice Determine if a membership is in grace period now
+    /// @param _idCommitment the idCommitment of the membership
+    function isInGracePeriod(uint256 _idCommitment) public view returns (bool) {
+        MembershipInfo memory membership = memberships[_idCommitment];
+        return _isInGracePeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
+    }
+
+    /// @dev Determine whether the current timestamp is in a given grace period
+    /// @param _gracePeriodStartTimestamp timestamp in which the grace period starts
+    /// @param _gracePeriodDuration duration of the grace period
+    function _isInGracePeriod(
+        uint256 _gracePeriodStartTimestamp,
+        uint32 _gracePeriodDuration
+    )
+        internal
+        view
+        returns (bool)
+    {
+        uint256 timeNow = block.timestamp;
+        return (
+            _gracePeriodStartTimestamp <= timeNow
+                && timeNow <= _gracePeriodStartTimestamp + uint256(_gracePeriodDuration)
+        );
+    }
+
+    /// @notice Determine if a membership is expired
+    /// @param _idCommitment the idCommitment of the membership
+    function isExpired(uint256 _idCommitment) public view returns (bool) {
+        MembershipInfo memory membership = memberships[_idCommitment];
+        return _isExpired(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
+    }
+
+    /// @dev Determine whether a grace period ends(the membership is expired)
+    /// @param _gracePeriodStartTimestamp timestamp in which the grace period starts
+    /// @param _gracePeriodDuration duration of the grace period
+    function _isExpired(uint256 _gracePeriodStartTimestamp, uint32 _gracePeriodDuration) internal view returns (bool) {
+        return block.timestamp > _gracePeriodStartTimestamp + uint256(_gracePeriodDuration);
+    }
+
+    /// @notice Returns the timestamp on which a membership can be considered expired (i.e. when its grace period ends)
+    /// @param _idCommitment the idCommitment of the membership
+    function membershipExpirationTimestamp(uint256 _idCommitment) public view returns (uint256) {
+        MembershipInfo memory membership = memberships[_idCommitment];
+        return membership.gracePeriodStartTimestamp + uint256(membership.gracePeriodDuration) + 1;
     }
 
     /// @dev Withdraw any available deposit balance in tokens after a membership is erased.

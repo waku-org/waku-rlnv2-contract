@@ -37,11 +37,6 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @notice The Merkle tree that stores rate commitments of memberships
     LazyIMTData public merkleTree;
 
-    /// Emitted when a new membership is added to the membership set
-    /// @param rateCommitment The rateCommitment of the membership
-    /// @param index The index of the membership in the membership set
-    event MembershipRegistered(uint256 rateCommitment, uint32 index);
-
     /// @notice the modifier to check if the idCommitment is valid
     /// @param idCommitment The idCommitment of the membership
     modifier onlyValidIdCommitment(uint256 idCommitment) {
@@ -110,11 +105,12 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         return idCommitment != 0 && idCommitment < Q;
     }
 
-    /// @notice Returns the rateCommitment of a membership at a given index
-    /// @param index The index of the membership in the membership set
-    /// @return The rateCommitment of the membership
-    function getRateCommmitment(uint32 index) internal view returns (uint256) {
-        return merkleTree.elements[LazyIMT.indexForElement(0, index)];
+    /// @notice Checks if a membership exists
+    /// @param idCommitment The idCommitment of the membership
+    /// @return true if the membership exists, false otherwise
+    function membershipExists(uint256 idCommitment) public view returns (bool) {
+        (,, uint256 rateCommitment) = getMembershipInfo(idCommitment);
+        return rateCommitment != 0;
     }
 
     /// @notice Returns the membership info (rate limit, index, rateCommitment) by its idCommitment
@@ -126,15 +122,29 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         if (membership.rateLimit == 0) {
             return (0, 0, 0);
         }
-        return (membership.rateLimit, membership.index, getRateCommmitment(membership.index));
+        return (membership.rateLimit, membership.index, _getRateCommmitment(membership.index));
     }
 
-    /// @notice Checks if a membership exists
-    /// @param idCommitment The idCommitment of the membership
-    /// @return true if the membership exists, false otherwise
-    function membershipExists(uint256 idCommitment) public view returns (bool) {
-        (,, uint256 rateCommitment) = getMembershipInfo(idCommitment);
-        return rateCommitment != 0;
+    /// @notice Returns the rateCommitments of memberships within an index range
+    /// @param startIndex The start index of the range (inclusive)
+    /// @param endIndex The end index of the range (inclusive)
+    /// @return The rateCommitments of the memberships
+    function getRateCommitmentsInRange(uint32 startIndex, uint32 endIndex) public view returns (uint256[] memory) {
+        if (startIndex > endIndex) revert InvalidPaginationQuery(startIndex, endIndex);
+        if (endIndex > nextFreeIndex) revert InvalidPaginationQuery(startIndex, endIndex); //FIXME: should it be >=?
+
+        uint256[] memory rateCommitments = new uint256[](endIndex - startIndex + 1);
+        for (uint32 i = startIndex; i <= endIndex; i++) {
+            rateCommitments[i - startIndex] = _getRateCommmitment(i);
+        }
+        return rateCommitments;
+    }
+
+    /// @notice Returns the rateCommitment of a membership at a given index
+    /// @param index The index of the membership in the membership set
+    /// @return The rateCommitment of the membership
+    function _getRateCommmitment(uint32 index) internal view returns (uint256) {
+        return merkleTree.elements[LazyIMT.indexForElement(0, index)];
     }
 
     /// @notice Register a membership
@@ -170,18 +180,6 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         _register(idCommitment, rateLimit);
     }
 
-    /// @dev Erase memberships from the list of idCommitments
-    /// @param idCommitmentsToErase The idCommitments to erase
-    function _eraseMemberships(uint256[] calldata idCommitmentsToErase) internal {
-        for (uint256 i = 0; i < idCommitmentsToErase.length; i++) {
-            uint256 idCommitmentToErase = idCommitmentsToErase[i];
-            MembershipInfo memory membershipToErase = memberships[idCommitmentToErase];
-            if (membershipToErase.rateLimit == 0) revert InvalidIdCommitment(idCommitmentToErase);
-            _eraseMembershipAndSaveSlotToReuse(_msgSender(), idCommitmentToErase, membershipToErase);
-            LazyIMT.update(merkleTree, 0, membershipToErase.index);
-        }
-    }
-
     /// @dev Registers a membership
     /// @param idCommitment The idCommitment of the membership
     /// @param rateLimit The rate limit of the membership
@@ -198,22 +196,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
             nextFreeIndex += 1;
         }
 
-        emit MembershipRegistered(rateCommitment, index);
-    }
-
-    /// @notice Returns the rateCommitments of memberships within an index range
-    /// @param startIndex The start index of the range (inclusive)
-    /// @param endIndex The end index of the range (inclusive)
-    /// @return The rateCommitments of the memberships
-    function getRateCommitmentsInRange(uint32 startIndex, uint32 endIndex) public view returns (uint256[] memory) {
-        if (startIndex > endIndex) revert InvalidPaginationQuery(startIndex, endIndex);
-        if (endIndex > nextFreeIndex) revert InvalidPaginationQuery(startIndex, endIndex); //FIXME: should it be >=?
-
-        uint256[] memory rateCommitments = new uint256[](endIndex - startIndex + 1);
-        for (uint32 i = startIndex; i <= endIndex; i++) {
-            rateCommitments[i - startIndex] = getRateCommmitment(i);
-        }
-        return rateCommitments;
+        emit MembershipRegistered(idCommitment, rateCommitment, index);
     }
 
     /// @notice Returns the root of the Merkle tree that stores rate commitments of memberships
@@ -253,6 +236,18 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         _eraseMemberships(idCommitments);
     }
 
+    /// @dev Erase memberships from the list of idCommitments
+    /// @param idCommitmentsToErase The idCommitments to erase
+    function _eraseMemberships(uint256[] calldata idCommitmentsToErase) internal {
+        for (uint256 i = 0; i < idCommitmentsToErase.length; i++) {
+            uint256 idCommitmentToErase = idCommitmentsToErase[i];
+            MembershipInfo memory membershipToErase = memberships[idCommitmentToErase];
+            if (membershipToErase.rateLimit == 0) revert InvalidIdCommitment(idCommitmentToErase);
+            _eraseMembershipAndSaveSlotToReuse(_msgSender(), idCommitmentToErase, membershipToErase);
+            LazyIMT.update(merkleTree, 0, membershipToErase.index);
+        }
+    }
+
     /// @notice Withdraw any available deposit balance in tokens after a membership is erased.
     /// @param token The address of the token to withdraw
     function withdraw(address token) external {
@@ -261,8 +256,8 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
 
     /// @notice Set the address of the price calculator
     /// @param _priceCalculator new price calculator address
-    function setDepositAmountCalculator(address _priceCalculator) external onlyOwner {
-        depositAmountCalculator = IPriceCalculator(_priceCalculator);
+    function setPriceCalculator(address _priceCalculator) external onlyOwner {
+        priceCalculator = IPriceCalculator(_priceCalculator);
     }
 
     /// @notice Set the maximum total rate limit of all memberships in the membership set
@@ -291,7 +286,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @param _activeDuration  new active duration
     function setActiveDuration(uint32 _activeDuration) external onlyOwner {
         require(_activeDuration > 0);
-        activeDuration = _activeDuration;
+        activeDurationForNewMemberships = _activeDuration;
     }
 
     /// @notice Set the grace period for new memberships (grace periods of existing memberships don't change)
