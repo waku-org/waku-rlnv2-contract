@@ -16,6 +16,7 @@
   solc = "0.8.24"
   src = "src"
   test = "test"
+  fs_permissions = [{ access = "read", path = "./broadcast" }]
 
 [fuzz]
 max_test_rejects = 128_000
