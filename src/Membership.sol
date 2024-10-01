@@ -150,7 +150,6 @@ abstract contract MembershipUpgradeable is Initializable {
         internal
         onlyInitializing
     {
-        require(0 < _minMembershipRateLimit);
         require(_minMembershipRateLimit <= _maxMembershipRateLimit);
         require(_maxMembershipRateLimit <= _maxTotalRateLimit);
         require(_activeDurationForNewMemberships > 0);

@@ -139,17 +139,30 @@ $ forge test
 
 ## Owner privileges
 
-The contract implementation aims to follow the [specification](https://github.com/waku-org/specs/blob/81b9fd588bff39894608746774b0903b067b5cdf/standards/core/rln-contract.md) that also describes ownership (see [Governance and upgradability](https://github.com/waku-org/specs/blob/81b9fd588bff39894608746774b0903b067b5cdf/standards/core/rln-contract.md#governance-and-upgradability) section).
+The contract implementation aims to follow the
+[specification](https://github.com/waku-org/specs/blob/81b9fd588bff39894608746774b0903b067b5cdf/standards/core/rln-contract.md)
+that also describes ownership (see
+[Governance and upgradability](https://github.com/waku-org/specs/blob/81b9fd588bff39894608746774b0903b067b5cdf/standards/core/rln-contract.md#governance-and-upgradability)
+section).
 
 As of commit afb858, the `Owner` privileges are assigned to the `msg.sender` of the membership registration transaction.
 The `Owner` has the following privileges:
 
-- set the token and price of one message published per epoch ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/LinearPriceCalculator.sol#L25));
-- authorize upgrades to a new implementation contract ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/WakuRlnV2.sol#L99));
-- set the price calculator contract address ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/WakuRlnV2.sol#L267));
-- set the maximum total rate limit of all memberships in the membership set ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/WakuRlnV2.sol#L273));
-- set the minimum ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/WakuRlnV2.sol#L287)) and maximum ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/WakuRlnV2.sol#L280)) rate limit of one membership;
-- set the duration of the active period ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/WakuRlnV2.sol#L295)) and grace period ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/WakuRlnV2.sol#L302)) of new memberships (see the [state transition diagram of a membership](https://github.com/waku-org/specs/blob/81b9fd588bff39894608746774b0903b067b5cdf/standards/core/rln-contract.md#membership-lifecycle)).
+- set the token and price of one message published per epoch
+  ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/LinearPriceCalculator.sol#L25));
+- authorize upgrades to a new implementation contract
+  ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/WakuRlnV2.sol#L99));
+- set the price calculator contract address
+  ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/WakuRlnV2.sol#L267));
+- set the maximum total rate limit of all memberships in the membership set
+  ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/WakuRlnV2.sol#L273));
+- set the minimum ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/WakuRlnV2.sol#L287)) and maximum
+  ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/WakuRlnV2.sol#L280)) rate limit of one
+  membership;
+- set the duration of the active period
+  ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/WakuRlnV2.sol#L295)) and grace period
+  ([link](https://github.com/waku-org/waku-rlnv2-contract/blob/main/src/WakuRlnV2.sol#L302)) of new memberships (see the
+  [state transition diagram of a membership](https://github.com/waku-org/specs/blob/81b9fd588bff39894608746774b0903b067b5cdf/standards/core/rln-contract.md#membership-lifecycle)).
 
 The pause functionality for contract functions is not yet implemented.
 

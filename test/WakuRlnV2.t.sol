@@ -2,8 +2,7 @@
 pragma solidity >=0.8.19 <0.9.0;
 
 import { Test } from "forge-std/Test.sol";
-import { Deploy } from "../script/Deploy.s.sol";
-import { DeploymentConfig } from "../script/DeploymentConfig.s.sol";
+import { DeployPriceCalculator, DeployWakuRlnV2, DeployProxy } from "../script/Deploy.s.sol";
 import "../src/WakuRlnV2.sol"; // solhint-disable-line
 import "../src/Membership.sol"; // solhint-disable-line
 import { IPriceCalculator } from "../src/IPriceCalculator.sol";
@@ -16,19 +15,19 @@ import "forge-std/console.sol";
 
 contract WakuRlnV2Test is Test {
     WakuRlnV2 internal w;
-    address internal impl;
-    DeploymentConfig internal deploymentConfig;
     TestToken internal token;
 
     address internal deployer;
 
-    uint256[] noIdCommitmentsToErase = new uint256[](0);
+    uint256[] internal noIdCommitmentsToErase = new uint256[](0);
 
     function setUp() public virtual {
         token = new TestToken();
+        IPriceCalculator priceCalculator = (new DeployPriceCalculator()).deploy(address(token));
+        WakuRlnV2 wakuRlnV2 = (new DeployWakuRlnV2()).deploy();
+        ERC1967Proxy proxy = (new DeployProxy()).deploy(address(priceCalculator), address(wakuRlnV2));
 
-        Deploy deployment = new Deploy();
-        (w, impl) = deployment.deploy(address(token));
+        w = WakuRlnV2(address(proxy));
 
         // Minting a large number of tokens to not have to worry about
         // Not having enough balance
@@ -61,8 +60,11 @@ contract WakuRlnV2Test is Test {
             w.root(),
             13_801_897_483_540_040_307_162_267_952_866_411_686_127_372_014_953_358_983_481_592_640_000_001_877_295
         );
-        (uint32 membershipRateLimit2, uint32 index2, uint256 rateCommitment2) = w.getMembershipInfo(idCommitment);
-        assertEq(membershipRateLimit2, membershipRateLimit);
+        uint32 fetchedMembershipRateLimit2;
+        uint32 index2;
+        uint256 rateCommitment2;
+        (fetchedMembershipRateLimit2, index2, rateCommitment2) = w.getMembershipInfo(idCommitment);
+        assertEq(fetchedMembershipRateLimit2, membershipRateLimit);
         assertEq(index2, 0);
         assertEq(rateCommitment2, rateCommitment);
         uint256[20] memory proof = w.getMerkleProof(0);
