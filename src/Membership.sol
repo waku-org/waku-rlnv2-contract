@@ -38,7 +38,7 @@ abstract contract MembershipUpgradeable is Initializable {
     uint32 public minMembershipRateLimit;
 
     /// @notice Membership active period duration (A in the spec)
-    uint32 public activeStateDuration;
+    uint32 public activeDuration;
 
     /// @notice Membership grace period duration (G in the spec)
     uint32 public gracePeriodDurationForNewMemberships;
@@ -102,14 +102,14 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @param _maxTotalRateLimit Maximum total rate limit of all memberships in the membership set
     /// @param _minMembershipRateLimit Minimum rate limit of each membership
     /// @param _maxMembershipRateLimit Maximum rate limit of each membership
-    /// @param _activeStateDuration Active state duration of each membership
+    /// @param _activeDuration Active state duration of each membership
     /// @param _gracePeriodDuration Grace period duration of each membership
     function __MembershipUpgradeable_init(
         address _priceCalculator,
         uint32 _maxTotalRateLimit,
         uint32 _minMembershipRateLimit,
         uint32 _maxMembershipRateLimit,
-        uint32 _activeStateDuration,
+        uint32 _activeDuration,
         uint32 _gracePeriodDuration
     )
         internal
@@ -120,7 +120,7 @@ abstract contract MembershipUpgradeable is Initializable {
             _maxTotalRateLimit,
             _minMembershipRateLimit,
             _maxMembershipRateLimit,
-            _activeStateDuration,
+            _activeDuration,
             _gracePeriodDuration
         );
     }
@@ -130,7 +130,7 @@ abstract contract MembershipUpgradeable is Initializable {
         uint32 _maxTotalRateLimit,
         uint32 _minMembershipRateLimit,
         uint32 _maxMembershipRateLimit,
-        uint32 _activeStateDuration,
+        uint32 _activeDuration,
         uint32 _gracePeriodDuration
     )
         internal
@@ -139,14 +139,14 @@ abstract contract MembershipUpgradeable is Initializable {
         require(0 < _minMembershipRateLimit);
         require(_minMembershipRateLimit <= _maxMembershipRateLimit);
         require(_maxMembershipRateLimit <= _maxTotalRateLimit);
-        require(_activeStateDuration > 0);
+        require(_activeDuration > 0);
         // Note: grace period duration may be equal to zero
 
         depositAmountCalculator = IPriceCalculator(_priceCalculator);
         maxTotalRateLimit = _maxTotalRateLimit;
         minMembershipRateLimit = _minMembershipRateLimit;
         maxMembershipRateLimit = _maxMembershipRateLimit;
-        activeStateDuration = _activeStateDuration;
+        activeDuration = _activeDuration;
         gracePeriodDurationForNewMemberships = _gracePeriodDuration;
     }
 
@@ -158,7 +158,7 @@ abstract contract MembershipUpgradeable is Initializable {
     }
 
     /// @dev acquire a membership and trasnfer the deposit to the contract
-    /// @param _sender address of the holder of the new membership  // FIXME: keeper?
+    /// @param _sender address of the holder of the new membership
     /// @param _idCommitment the idCommitment of the new membership
     /// @param _rateLimit the membership rate limit
     /// @return index the index of the new membership in the membership set
@@ -188,8 +188,8 @@ abstract contract MembershipUpgradeable is Initializable {
         (index, indexReused) = _getFreeIndex();
 
         memberships[_idCommitment] = MembershipInfo({
-            holder: _sender, // FIXME: keeper?
-            gracePeriodStartTimestamp: block.timestamp + uint256(activeStateDuration),
+            holder: _sender,
+            gracePeriodStartTimestamp: block.timestamp + uint256(activeDuration),
             gracePeriodDuration: gracePeriodDurationForNewMemberships,
             token: token,
             depositAmount: depositAmount,
@@ -230,8 +230,8 @@ abstract contract MembershipUpgradeable is Initializable {
         // Note: we add the new active period to the end of the ongoing grace period
         uint256 newGracePeriodStartTimestamp = (
             membership.gracePeriodStartTimestamp + membership.gracePeriodDuration
-            // FIXME: we must use this membership's activeStateDuration, not global default
-            + uint256(activeStateDuration)
+            // FIXME: we must use this membership's activeDuration, not global default
+            + uint256(activeDuration)
         );
 
         membership.gracePeriodStartTimestamp = newGracePeriodStartTimestamp;

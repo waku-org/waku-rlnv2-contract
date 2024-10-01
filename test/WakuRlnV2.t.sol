@@ -227,7 +227,7 @@ contract WakuRlnV2Test is Test {
 
         assertEq(oldGracePeriodDuration, newGracePeriodDuration);
         assertEq(
-            oldGracePeriodStartTimestamp + oldGracePeriodDuration + uint256(w.activeStateDuration()),
+            oldGracePeriodStartTimestamp + oldGracePeriodDuration + uint256(w.activeDuration()),
             newGracePeriodStartTimestamp
         );
         assertFalse(w.isInGracePeriod(idCommitment));

@@ -71,14 +71,14 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @param _maxTotalRateLimit Maximum total rate limit of all memberships in the membership set
     /// @param _minMembershipRateLimit Minimum rate limit of one membership
     /// @param _maxMembershipRateLimit Maximum rate limit of one membership
-    /// @param _activeStateDuration Membership expiration term
+    /// @param _activeDuration Membership active duration
     /// @param _gracePeriod Membership grace period
     function initialize(
         address _priceCalculator,
         uint32 _maxTotalRateLimit,
         uint32 _minMembershipRateLimit,
         uint32 _maxMembershipRateLimit,
-        uint32 _activeStateDuration,
+        uint32 _activeDuration,
         uint32 _gracePeriod
     )
         public
@@ -91,7 +91,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
             _maxTotalRateLimit,
             _minMembershipRateLimit,
             _maxMembershipRateLimit,
-            _activeStateDuration,
+            _activeDuration,
             _gracePeriod
         );
 
@@ -287,17 +287,17 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         minMembershipRateLimit = _minMembershipRateLimit;
     }
 
-    /// @notice Set the expiration term for new memberships (expiration dates of existing memberships don't change)
-    /// @param _activeStateDuration  new expiration term
-    function setactiveStateDuration(uint32 _activeStateDuration) external onlyOwner {
-        require(_activeStateDuration > 0);
-        activeStateDuration = _activeStateDuration;
+    /// @notice Set the active duration for new memberships (terms of existing memberships don't change)
+    /// @param _activeDuration  new active duration
+    function setActiveDuration(uint32 _activeDuration) external onlyOwner {
+        require(_activeDuration > 0);
+        activeDuration = _activeDuration;
     }
 
     /// @notice Set the grace period for new memberships (grace periods of existing memberships don't change)
-    /// @param _gracePeriod  new grace period term
-    function setGracePeriod(uint32 _gracePeriod) external onlyOwner {
+    /// @param _gracePeriodDuration  new grace period duration
+    function setGracePeriodDuration(uint32 _gracePeriodDuration) external onlyOwner {
         // Note: grace period duration may be equal to zero
-        gracePeriodDurationForNewMemberships = _gracePeriod;
+        gracePeriodDurationForNewMemberships = _gracePeriodDuration;
     }
 }
