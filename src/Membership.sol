@@ -321,14 +321,28 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @param _gracePeriodStartTimestamp timestamp in which the grace period starts
     /// @param _gracePeriodDuration duration of the grace period
     function _isExpired(uint256 _gracePeriodStartTimestamp, uint32 _gracePeriodDuration) internal view returns (bool) {
-        return block.timestamp > _gracePeriodStartTimestamp + uint256(_gracePeriodDuration);
+        return block.timestamp >= _membershipExpirationTimestamp(_gracePeriodStartTimestamp, _gracePeriodDuration);
     }
 
     /// @notice Returns the timestamp on which a membership can be considered expired (i.e. when its grace period ends)
     /// @param _idCommitment the idCommitment of the membership
     function membershipExpirationTimestamp(uint256 _idCommitment) public view returns (uint256) {
         MembershipInfo memory membership = memberships[_idCommitment];
-        return membership.gracePeriodStartTimestamp + uint256(membership.gracePeriodDuration) + 1;
+        return _membershipExpirationTimestamp(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
+    }
+
+    /// @dev Determine when the grace period ends
+    /// @param _gracePeriodStartTimestamp timestamp in which the grace period starts
+    /// @param _gracePeriodDuration duration of the grace period
+    function _membershipExpirationTimestamp(
+        uint256 _gracePeriodStartTimestamp,
+        uint32 _gracePeriodDuration
+    )
+        internal
+        pure
+        returns (uint256)
+    {
+        return _gracePeriodStartTimestamp + uint256(_gracePeriodDuration) + 1;
     }
 
     /// @dev Withdraw any available deposit balance in tokens after a membership is erased.
