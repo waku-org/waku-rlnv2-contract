@@ -48,7 +48,7 @@ contract WakuRlnV2Test is Test {
         vm.pauseGasMetering();
         assertEq(w.nextFreeIndex(), 1);
         assertEq(w.membershipExists(idCommitment), true);
-        (,,, uint32 fetchedMembershipRateLimit, uint32 index, address holder,) = w.memberships(idCommitment);
+        (,,,, uint32 fetchedMembershipRateLimit, uint32 index, address holder,) = w.memberships(idCommitment);
         assertEq(fetchedMembershipRateLimit, membershipRateLimit);
         assertEq(holder, address(this));
         assertEq(index, 0);
@@ -197,7 +197,7 @@ contract WakuRlnV2Test is Test {
 
         token.approve(address(w), price);
         w.register(idCommitment, membershipRateLimit);
-        (, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment);
+        (,, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment);
 
         assertFalse(w.isInGracePeriod(idCommitment));
         assertFalse(w.isExpired(idCommitment));
@@ -220,9 +220,9 @@ contract WakuRlnV2Test is Test {
         vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
         emit MembershipUpgradeable.MembershipExtended(idCommitment, 0, 0, 0);
 
-        (, uint256 oldGracePeriodStartTimestamp, uint32 oldGracePeriodDuration,,,,) = w.memberships(idCommitment);
+        (,, uint256 oldGracePeriodStartTimestamp, uint32 oldGracePeriodDuration,,,,) = w.memberships(idCommitment);
         w.extendMemberships(commitmentsToExtend);
-        (, uint256 newGracePeriodStartTimestamp, uint32 newGracePeriodDuration,,,,) = w.memberships(idCommitment);
+        (,, uint256 newGracePeriodStartTimestamp, uint32 newGracePeriodDuration,,,,) = w.memberships(idCommitment);
 
         assertEq(oldGracePeriodDuration, newGracePeriodDuration);
         assertEq(
@@ -253,7 +253,7 @@ contract WakuRlnV2Test is Test {
         token.approve(address(w), price);
         w.register(idCommitment, membershipRateLimit);
         uint256 ogExpirationTimestamp = w.membershipExpirationTimestamp(idCommitment);
-        (, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment);
+        (,, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment);
 
         vm.warp(gracePeriodStartTimestamp);
 
@@ -265,7 +265,7 @@ contract WakuRlnV2Test is Test {
         emit MembershipUpgradeable.MembershipExtended(idCommitment, 0, 0, 0);
         w.extendMemberships(commitmentsToExtend);
 
-        (, uint256 newGracePeriodStartTimestamp, uint32 newGracePeriodDuration,,,,) = w.memberships(idCommitment);
+        (,, uint256 newGracePeriodStartTimestamp, uint32 newGracePeriodDuration,,,,) = w.memberships(idCommitment);
         uint256 expectedExpirationTimestamp = newGracePeriodStartTimestamp + uint256(newGracePeriodDuration) + 1;
         uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitment);
         assertEq(expectedExpirationTimestamp, membershipExpirationTimestamp);
@@ -285,7 +285,7 @@ contract WakuRlnV2Test is Test {
         token.approve(address(w), price);
         w.register(idCommitment, membershipRateLimit);
 
-        (, uint256 fetchedgracePeriodStartTimestamp, uint32 fetchedGracePeriod,,,,) = w.memberships(idCommitment);
+        (,, uint256 fetchedgracePeriodStartTimestamp, uint32 fetchedGracePeriod,,,,) = w.memberships(idCommitment);
 
         uint256 expectedExpirationTimestamp = fetchedgracePeriodStartTimestamp + uint256(fetchedGracePeriod) + 1;
         uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitment);
@@ -317,7 +317,7 @@ contract WakuRlnV2Test is Test {
         }
 
         // Time travel to a point in which the last membership is active
-        (, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(5);
+        (,, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(5);
         vm.warp(gracePeriodStartTimestamp - 1);
 
         // Ensure that this is the case
@@ -353,17 +353,17 @@ contract WakuRlnV2Test is Test {
 
         // Ensure that the chosen memberships were erased and others unaffected
         address holder;
-        (,,,,, holder,) = w.memberships(1);
+        (,,,,,, holder,) = w.memberships(1);
         assertEq(holder, address(0));
-        (,,,,, holder,) = w.memberships(2);
+        (,,,,,, holder,) = w.memberships(2);
         assertEq(holder, address(0));
-        (,,,,, holder,) = w.memberships(3);
+        (,,,,,, holder,) = w.memberships(3);
         assertEq(holder, address(this));
-        (,,,,, holder,) = w.memberships(4);
+        (,,,,,, holder,) = w.memberships(4);
         assertEq(holder, address(0));
-        (,,,,, holder,) = w.memberships(5);
+        (,,,,,, holder,) = w.memberships(5);
         assertEq(holder, address(this));
-        (,,,,, holder,) = w.memberships(6);
+        (,,,,,, holder,) = w.memberships(6);
         assertEq(holder, address(this));
 
         // The balance available for withdrawal should match the amount of the expired membership
@@ -426,7 +426,7 @@ contract WakuRlnV2Test is Test {
         for (uint256 i = 1; i <= idCommitmentsLength; i++) {
             token.approve(address(w), price);
             w.register(i, 20);
-            (,,,, index,,) = w.memberships(i);
+            (,,,,, index,,) = w.memberships(i);
             assertEq(index, w.nextFreeIndex() - 1);
             commitmentsToErase[i - 1] = i;
         }
@@ -448,7 +448,7 @@ contract WakuRlnV2Test is Test {
             uint32 expectedIndex = w.indicesOfLazilyErasedMemberships(expectedindexReusedPos);
             token.approve(address(w), price);
             w.register(idCommitment, 20);
-            (,,,, index,,) = w.memberships(idCommitment);
+            (,,,,, index,,) = w.memberships(idCommitment);
             assertEq(expectedIndex, index);
             // Should have been removed from the list
             vm.expectRevert();
@@ -464,7 +464,7 @@ contract WakuRlnV2Test is Test {
         // Should use a new index since we got rid of all available indexes
         token.approve(address(w), price);
         w.register(100, 20);
-        (,,,, index,,) = w.memberships(100);
+        (,,,,, index,,) = w.memberships(100);
         assertEq(index, currnextCommitmentIndex);
         assertEq(currnextCommitmentIndex + 1, w.nextFreeIndex());
     }
@@ -510,15 +510,15 @@ contract WakuRlnV2Test is Test {
 
         address holder;
 
-        (,,,,, holder,) = w.memberships(idCommitment + 1);
+        (,,,,,, holder,) = w.memberships(idCommitment + 1);
         assertEq(holder, address(0));
 
-        (,,,,, holder,) = w.memberships(idCommitment + 2);
+        (,,,,,, holder,) = w.memberships(idCommitment + 2);
         assertEq(holder, address(0));
 
         // Attempting to call erase when some of the commitments can't be erased yet
         // idCommitment can be erased (in grace period), but idCommitment + 4 is still active
-        (, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment + 4);
+        (,, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment + 4);
         vm.warp(gracePeriodStartTimestamp - 1);
         commitmentsToErase[0] = idCommitment;
         commitmentsToErase[1] = idCommitment + 4;
@@ -558,7 +558,7 @@ contract WakuRlnV2Test is Test {
 
         // Erased memberships are gone!
         for (uint256 i = 0; i < commitmentsToErase.length; i++) {
-            (,,, uint32 fetchedMembershipRateLimit,,,) = w.memberships(commitmentsToErase[i]);
+            (,,,, uint32 fetchedMembershipRateLimit,,,) = w.memberships(commitmentsToErase[i]);
             assertEq(fetchedMembershipRateLimit, 0);
         }
     }
@@ -580,7 +580,7 @@ contract WakuRlnV2Test is Test {
         token.approve(address(w), price);
         w.register(idCommitment, membershipRateLimit);
 
-        (, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment);
+        (,, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment);
 
         vm.warp(gracePeriodStartTimestamp);
 

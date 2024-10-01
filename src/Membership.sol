@@ -60,11 +60,13 @@ abstract contract MembershipUpgradeable is Initializable {
     uint32[] public indicesOfLazilyErasedMemberships;
 
     struct MembershipInfo {
-        /// @notice deposit amount (in tokens) to register this membership
+        /// @notice the deposit amount (in tokens) to register this membership
         uint256 depositAmount;
-        /// @notice timestamp of when the grace period starts for this membership
+        /// @notice the duration of the active period of this membership
+        uint32 activeDuration;
+        /// @notice the start of the grace period (= the end of the active period)
         uint256 gracePeriodStartTimestamp;
-        /// @notice duration of the grace period for this membership
+        /// @notice the duration of the grace period of this membership
         uint32 gracePeriodDuration;
         /// @notice the membership rate limit
         uint32 rateLimit;
@@ -107,15 +109,15 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @param _maxTotalRateLimit Maximum total rate limit of all memberships in the membership set
     /// @param _minMembershipRateLimit Minimum rate limit of each membership
     /// @param _maxMembershipRateLimit Maximum rate limit of each membership
-    /// @param _activeDuration Active state duration of each membership
-    /// @param _gracePeriodDuration Grace period duration of each membership
+    /// @param _activeDurationForNewMemberships Active state duration of each membership
+    /// @param _gracePeriodDurationForNewMemberships Grace period duration of each membership
     function __MembershipUpgradeable_init(
         address _priceCalculator,
         uint32 _maxTotalRateLimit,
         uint32 _minMembershipRateLimit,
         uint32 _maxMembershipRateLimit,
-        uint32 _activeDuration,
-        uint32 _gracePeriodDuration
+        uint32 _activeDurationForNewMemberships,
+        uint32 _gracePeriodDurationForNewMemberships
     )
         internal
         onlyInitializing
@@ -125,8 +127,8 @@ abstract contract MembershipUpgradeable is Initializable {
             _maxTotalRateLimit,
             _minMembershipRateLimit,
             _maxMembershipRateLimit,
-            _activeDuration,
-            _gracePeriodDuration
+            _activeDurationForNewMemberships,
+            _gracePeriodDurationForNewMemberships
         );
     }
 
@@ -135,8 +137,8 @@ abstract contract MembershipUpgradeable is Initializable {
         uint32 _maxTotalRateLimit,
         uint32 _minMembershipRateLimit,
         uint32 _maxMembershipRateLimit,
-        uint32 _activeDuration,
-        uint32 _gracePeriodDuration
+        uint32 _activeDurationForNewMemberships,
+        uint32 _gracePeriodDurationForNewMemberships
     )
         internal
         onlyInitializing
@@ -144,15 +146,15 @@ abstract contract MembershipUpgradeable is Initializable {
         require(0 < _minMembershipRateLimit);
         require(_minMembershipRateLimit <= _maxMembershipRateLimit);
         require(_maxMembershipRateLimit <= _maxTotalRateLimit);
-        require(_activeDuration > 0);
+        require(_activeDurationForNewMemberships > 0);
         // Note: grace period duration may be equal to zero
 
         priceCalculator = IPriceCalculator(_priceCalculator);
         maxTotalRateLimit = _maxTotalRateLimit;
         minMembershipRateLimit = _minMembershipRateLimit;
         maxMembershipRateLimit = _maxMembershipRateLimit;
-        activeDurationForNewMemberships = _activeDuration;
-        gracePeriodDurationForNewMemberships = _gracePeriodDuration;
+        activeDurationForNewMemberships = _activeDurationForNewMemberships;
+        gracePeriodDurationForNewMemberships = _gracePeriodDurationForNewMemberships;
     }
 
     /// @dev acquire a membership and trasnfer the deposit to the contract
@@ -188,6 +190,7 @@ abstract contract MembershipUpgradeable is Initializable {
 
         memberships[_idCommitment] = MembershipInfo({
             holder: _sender,
+            activeDuration: activeDurationForNewMemberships,
             gracePeriodStartTimestamp: block.timestamp + uint256(activeDurationForNewMemberships),
             gracePeriodDuration: gracePeriodDurationForNewMemberships,
             token: token,
@@ -234,11 +237,8 @@ abstract contract MembershipUpgradeable is Initializable {
         if (_sender != membership.holder) revert AttemptedExtensionByNonHolder(_idCommitment);
 
         // Note: we add the new active period to the end of the ongoing grace period
-        uint256 newGracePeriodStartTimestamp = (
-            membership.gracePeriodStartTimestamp + membership.gracePeriodDuration
-            // FIXME: we must use this membership's activeDuration, not global default
-            + uint256(activeDurationForNewMemberships)
-        );
+        uint256 newGracePeriodStartTimestamp =
+            (membership.gracePeriodStartTimestamp + membership.gracePeriodDuration + uint256(membership.activeDuration));
 
         membership.gracePeriodStartTimestamp = newGracePeriodStartTimestamp;
 
