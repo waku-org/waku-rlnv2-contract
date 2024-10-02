@@ -169,10 +169,10 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         _register(idCommitment, rateLimit);
     }
 
-    /// @notice Register a membership
+    /// @notice Register a membership while erasing some expired memberships to reuse their rate limit
     /// @param idCommitment The idCommitment of the new membership
     /// @param rateLimit The rate limit of the new membership
-    /// @param idCommitmentsToErase List of idCommitments of expired memberships to erase
+    /// @param idCommitmentsToErase The list of idCommitments of expired memberships to erase
     function register(
         uint256 idCommitment,
         uint32 rateLimit,
@@ -183,18 +183,16 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         noDuplicateMembership(idCommitment)
         membershipSetNotFull
     {
+        // erase memberships without overwriting membership set data to zero (save gas)
         _eraseMemberships(idCommitmentsToErase, false);
         _register(idCommitment, rateLimit);
     }
 
-    /// @dev Registers a membership
+    /// @dev Register a membership (internal function)
     /// @param idCommitment The idCommitment of the membership
     /// @param rateLimit The rate limit of the membership
     function _register(uint256 idCommitment, uint32 rateLimit) internal {
-        uint32 index;
-        bool indexReused;
-        (index, indexReused) = _acquireMembership(_msgSender(), idCommitment, rateLimit);
-
+        (uint32 index, bool indexReused) = _acquireMembership(_msgSender(), idCommitment, rateLimit);
         uint256 rateCommitment = PoseidonT3.hash([idCommitment, rateLimit]);
         if (indexReused) {
             LazyIMT.update(merkleTree, rateCommitment, index);
@@ -224,25 +222,23 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         return fixedSizeProof;
     }
 
-    /// @notice Extend a grace-period membership
+    /// @notice Extend a grace-period membership under the same conditions
     /// @param idCommitments list of idCommitments of memberships to extend
     function extendMemberships(uint256[] calldata idCommitments) external {
         for (uint256 i = 0; i < idCommitments.length; i++) {
-            uint256 idCommitmentToExtend = idCommitments[i];
-            _extendMembership(_msgSender(), idCommitmentToExtend);
+            _extendMembership(_msgSender(), idCommitments[i]);
         }
     }
 
     /// @notice Erase expired memberships or owned grace-period memberships
     /// The user can select expired memberships offchain,
     /// and proceed to erase them.
-    /// This function is also used to erase the user's own grace-period memberships.
-    /// The user (i.e. the transaction sender) can then withdraw the deposited tokens.
-    /// @param idCommitments list of idCommitments of the memberships to erase
-    /// @param eraseFromMembershipSet Indicates whether to erase membership data from the set
+    /// This function is also used by the holder to erase their own grace-period memberships.
+    /// The holder can then withdraw the deposited tokens.
+    /// @param idCommitments The list of idCommitments of the memberships to erase
+    /// @param eraseFromMembershipSet Indicates whether to erase the membership's rate commitment from the membership
+    /// set
     function eraseMemberships(uint256[] calldata idCommitments, bool eraseFromMembershipSet) external {
-        // Clean-up: erase memberships from membership array (free up the rate limit),
-        // and from the membership set (free up tree indices).
         _eraseMemberships(idCommitments, eraseFromMembershipSet);
     }
 
@@ -250,19 +246,25 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @param idCommitmentsToErase The idCommitments of memberships to erase from storage
     /// @param eraseFromMembershipSet Indicates whether to erase membership data from the set
     function _eraseMemberships(uint256[] calldata idCommitmentsToErase, bool eraseFromMembershipSet) internal {
+        // eraseFromMembershipSet == true means full clean-up.
+        //  Erase memberships from memberships array (free up the rate limit and index),
+        //  and also erase the rate limit from the Merkle tree that represents the membership set (reduce the tree
+        // size).
+        // eraseFromMembershipSet == false means lazy erasure.
+        //  Only erase memberships from the membership array (consume less gas).
+        //  Merkle tree data will be overwritten when the correspondind index is reused.
         for (uint256 i = 0; i < idCommitmentsToErase.length; i++) {
-            uint256 idCommitmentToErase = idCommitmentsToErase[i];
             // Erase the membership from the memberships array in contract storage
-            uint32 indexToErase = _eraseMembershipLazily(_msgSender(), idCommitmentToErase);
-            // Optionally, also erase the rate commitment data from the membership set (the Merkle tree)
-            // This does not affect index reusal for new membership registrations
+            uint32 indexToErase = _eraseMembershipLazily(_msgSender(), idCommitmentsToErase[i]);
+            // Optionally, also erase the rate commitment data from the membership set.
+            // This does not affect the total rate limit control, or index reusal for new membership registrations.
             if (eraseFromMembershipSet) {
                 LazyIMT.update(merkleTree, 0, indexToErase);
             }
         }
     }
 
-    /// @notice Withdraw any available deposit balance in tokens after a membership is erased.
+    /// @notice Withdraw any available deposit balance in tokens after a membership is erased
     /// @param token The address of the token to withdraw
     function withdraw(address token) external {
         _withdraw(_msgSender(), token);
@@ -277,14 +279,14 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @notice Set the maximum total rate limit of all memberships in the membership set
     /// @param _maxTotalRateLimit new maximum total rate limit (messages per epoch)
     function setMaxTotalRateLimit(uint32 _maxTotalRateLimit) external onlyOwner {
-        require(_maxTotalRateLimit >= maxMembershipRateLimit);
+        require(maxMembershipRateLimit <= _maxTotalRateLimit);
         maxTotalRateLimit = _maxTotalRateLimit;
     }
 
     /// @notice Set the maximum rate limit of one membership
     /// @param _maxMembershipRateLimit  new maximum rate limit per membership (messages per epoch)
     function setMaxMembershipRateLimit(uint32 _maxMembershipRateLimit) external onlyOwner {
-        require(_maxMembershipRateLimit >= minMembershipRateLimit);
+        require(minMembershipRateLimit <= _maxMembershipRateLimit);
         maxMembershipRateLimit = _maxMembershipRateLimit;
     }
 
@@ -297,13 +299,13 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     }
 
     /// @notice Set the active duration for new memberships (terms of existing memberships don't change)
-    /// @param _activeDurationForNewMembership  new active duration
+    /// @param _activeDurationForNewMembership new active duration
     function setActiveDuration(uint32 _activeDurationForNewMembership) external onlyOwner {
         require(_activeDurationForNewMembership > 0);
         activeDurationForNewMemberships = _activeDurationForNewMembership;
     }
 
-    /// @notice Set the grace period for new memberships (grace periods of existing memberships don't change)
+    /// @notice Set the grace period for new memberships (terms of existing memberships don't change)
     /// @param _gracePeriodDurationForNewMembership  new grace period duration
     function setGracePeriodDuration(uint32 _gracePeriodDurationForNewMembership) external onlyOwner {
         // Note: grace period duration may be equal to zero
