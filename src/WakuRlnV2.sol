@@ -47,7 +47,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @notice the modifier to check that the membership with this idCommitment doesn't already exist
     /// @param idCommitment The idCommitment of the membership
     modifier noDuplicateMembership(uint256 idCommitment) {
-        require(!membershipExists(idCommitment), "Duplicate idCommitment: membership already exists");
+        require(!isInMembershipSet(idCommitment), "Duplicate idCommitment: membership already exists");
         _;
     }
 
@@ -105,10 +105,10 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         return idCommitment != 0 && idCommitment < Q;
     }
 
-    /// @notice Checks if a membership exists
+    /// @notice Checks if a membership is in the membership set
     /// @param idCommitment The idCommitment of the membership
-    /// @return true if the membership exists, false otherwise
-    function membershipExists(uint256 idCommitment) public view returns (bool) {
+    /// @return true if the membership is in the membership set, false otherwise
+    function isInMembershipSet(uint256 idCommitment) public view returns (bool) {
         (,, uint256 rateCommitment) = getMembershipInfo(idCommitment);
         return rateCommitment != 0;
     }
@@ -176,7 +176,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         noDuplicateMembership(idCommitment)
         membershipSetNotFull
     {
-        _eraseMemberships(idCommitmentsToErase);
+        _eraseMemberships(idCommitmentsToErase, false);
         _register(idCommitment, rateLimit);
     }
 
@@ -232,19 +232,26 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// This function is also used to erase the user's own grace-period memberships.
     /// The user (i.e. the transaction sender) can then withdraw the deposited tokens.
     /// @param idCommitments list of idCommitments of the memberships to erase
-    function eraseMemberships(uint256[] calldata idCommitments) external {
-        _eraseMemberships(idCommitments);
+    /// @param eraseFromMembershipSet Indicates whether to erase membership data from the set
+    function eraseMemberships(uint256[] calldata idCommitments, bool eraseFromMembershipSet) external {
+        // Clean-up: erase memberships from membership array (free up the rate limit),
+        // and from the membership set (free up tree indices).
+        _eraseMemberships(idCommitments, eraseFromMembershipSet);
     }
 
     /// @dev Erase memberships from the list of idCommitments
-    /// @param idCommitmentsToErase The idCommitments to erase
-    function _eraseMemberships(uint256[] calldata idCommitmentsToErase) internal {
+    /// @param idCommitmentsToErase The idCommitments of memberships to erase from storage
+    /// @param eraseFromMembershipSet Indicates whether to erase membership data from the set
+    function _eraseMemberships(uint256[] calldata idCommitmentsToErase, bool eraseFromMembershipSet) internal {
         for (uint256 i = 0; i < idCommitmentsToErase.length; i++) {
             uint256 idCommitmentToErase = idCommitmentsToErase[i];
-            MembershipInfo memory membershipToErase = memberships[idCommitmentToErase];
-            if (membershipToErase.rateLimit == 0) revert InvalidIdCommitment(idCommitmentToErase);
-            _eraseMembershipAndSaveSlotToReuse(_msgSender(), idCommitmentToErase, membershipToErase);
-            LazyIMT.update(merkleTree, 0, membershipToErase.index);
+            // Erase the membership from the memberships array in contract storage
+            uint32 indexToErase = _eraseMembershipLazily(_msgSender(), idCommitmentToErase);
+            // Optionally, also erase the rate commitment data from the membership set (the Merkle tree)
+            // This does not affect index reusal for new membership registrations
+            if (eraseFromMembershipSet) {
+                LazyIMT.update(merkleTree, 0, indexToErase);
+            }
         }
     }
 
@@ -283,16 +290,16 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     }
 
     /// @notice Set the active duration for new memberships (terms of existing memberships don't change)
-    /// @param _activeDuration  new active duration
-    function setActiveDuration(uint32 _activeDuration) external onlyOwner {
-        require(_activeDuration > 0);
-        activeDurationForNewMemberships = _activeDuration;
+    /// @param _activeDurationForNewMembership  new active duration
+    function setActiveDuration(uint32 _activeDurationForNewMembership) external onlyOwner {
+        require(_activeDurationForNewMembership > 0);
+        activeDurationForNewMemberships = _activeDurationForNewMembership;
     }
 
     /// @notice Set the grace period for new memberships (grace periods of existing memberships don't change)
-    /// @param _gracePeriodDuration  new grace period duration
-    function setGracePeriodDuration(uint32 _gracePeriodDuration) external onlyOwner {
+    /// @param _gracePeriodDurationForNewMembership  new grace period duration
+    function setGracePeriodDuration(uint32 _gracePeriodDurationForNewMembership) external onlyOwner {
         // Note: grace period duration may be equal to zero
-        gracePeriodDurationForNewMemberships = _gracePeriodDuration;
+        gracePeriodDurationForNewMemberships = _gracePeriodDurationForNewMembership;
     }
 }

@@ -47,7 +47,7 @@ contract WakuRlnV2Test is Test {
         w.register(idCommitment, membershipRateLimit);
         vm.pauseGasMetering();
         assertEq(w.nextFreeIndex(), 1);
-        assertEq(w.membershipExists(idCommitment), true);
+        assertEq(w.isInMembershipSet(idCommitment), true);
         (,,,, uint32 fetchedMembershipRateLimit, uint32 index, address holder,) = w.memberships(idCommitment);
         assertEq(fetchedMembershipRateLimit, membershipRateLimit);
         assertEq(holder, address(this));
@@ -102,7 +102,7 @@ contract WakuRlnV2Test is Test {
         vm.assume(w.isValidMembershipRateLimit(membershipRateLimit));
         vm.resumeGasMetering();
 
-        assertEq(w.membershipExists(idCommitment), false);
+        assertEq(w.isInMembershipSet(idCommitment), false);
         token.approve(address(w), price);
         w.register(idCommitment, membershipRateLimit);
         uint256 rateCommitment = PoseidonT3.hash([idCommitment, membershipRateLimit]);
@@ -434,7 +434,7 @@ contract WakuRlnV2Test is Test {
         // time travel to the moment we can erase all expired memberships
         uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitmentsLength);
         vm.warp(membershipExpirationTimestamp);
-        w.eraseMemberships(commitmentsToErase);
+        w.eraseMemberships(commitmentsToErase, false);
 
         // Verify that expired indices match what we expect
         for (uint32 i = 0; i < idCommitmentsLength; i++) {
@@ -506,7 +506,7 @@ contract WakuRlnV2Test is Test {
         emit MembershipUpgradeable.MembershipExpired(commitmentsToErase[0], 0, 0);
         vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
         emit MembershipUpgradeable.MembershipExpired(commitmentsToErase[0], 0, 0);
-        w.eraseMemberships(commitmentsToErase);
+        w.eraseMemberships(commitmentsToErase, false);
 
         address holder;
 
@@ -523,7 +523,7 @@ contract WakuRlnV2Test is Test {
         commitmentsToErase[0] = idCommitment;
         commitmentsToErase[1] = idCommitment + 4;
         vm.expectRevert(abi.encodeWithSelector(CannotEraseMembership.selector, idCommitment + 4));
-        w.eraseMemberships(commitmentsToErase);
+        w.eraseMemberships(commitmentsToErase, false);
     }
 
     function test__RemoveAllExpiredMemberships(uint32 idCommitmentsLength) external {
@@ -554,7 +554,7 @@ contract WakuRlnV2Test is Test {
             emit MembershipUpgradeable.MembershipExpired(i + 1, 0, 0);
         }
 
-        w.eraseMemberships(commitmentsToErase);
+        w.eraseMemberships(commitmentsToErase, false);
 
         // Erased memberships are gone!
         for (uint256 i = 0; i < commitmentsToErase.length; i++) {
@@ -586,7 +586,7 @@ contract WakuRlnV2Test is Test {
 
         uint256[] memory commitmentsToErase = new uint256[](1);
         commitmentsToErase[0] = idCommitment;
-        w.eraseMemberships(commitmentsToErase);
+        w.eraseMemberships(commitmentsToErase, false);
 
         uint256 availableBalance = w.depositsToWithdraw(address(this), address(token));
 

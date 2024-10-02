@@ -22,6 +22,9 @@ error AttemptedExtensionByNonHolder(uint256 idCommitment);
 // This membership cannot be erased
 error CannotEraseMembership(uint256 idCommitment);
 
+// This membership does not exist
+error MembershipDoesNotExist(uint256 idCommitment);
+
 abstract contract MembershipUpgradeable is Initializable {
     using SafeERC20 for IERC20;
 
@@ -250,39 +253,39 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @dev Erase expired memberships or owned grace-period memberships.
     /// @param _sender address of the sender of transaction (will be used to check memberships in grace period)
     /// @param _idCommitment idCommitment of the membership to erase
-    function _eraseMembershipAndSaveSlotToReuse(
-        address _sender,
-        uint256 _idCommitment,
-        MembershipInfo memory _membership
-    )
-        internal
-    {
-        bool membershipExpired = _isExpired(_membership.gracePeriodStartTimestamp, _membership.gracePeriodDuration);
+    function _eraseMembershipLazily(address _sender, uint256 _idCommitment) internal returns (uint32 index) {
+        MembershipInfo memory membership = memberships[_idCommitment];
+
+        if (membership.rateLimit == 0) revert MembershipDoesNotExist(_idCommitment);
+
+        bool membershipExpired = _isExpired(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
         bool membershipIsInGracePeriod =
-            _isInGracePeriod(_membership.gracePeriodStartTimestamp, _membership.gracePeriodDuration);
-        bool isHolder = (_membership.holder == _sender);
+            _isInGracePeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
+        bool isHolder = (membership.holder == _sender);
 
         if (!membershipExpired && !(membershipIsInGracePeriod && isHolder)) {
             revert CannotEraseMembership(_idCommitment);
         }
 
         // Move deposit balance from the membership to be erased to holder deposit balance
-        depositsToWithdraw[_membership.holder][_membership.token] += _membership.depositAmount;
+        depositsToWithdraw[membership.holder][membership.token] += membership.depositAmount;
 
         // Deduct the rate limit of this membership from the total rate limit
-        currentTotalRateLimit -= _membership.rateLimit;
+        currentTotalRateLimit -= membership.rateLimit;
 
         // Mark this membership as reusable
-        indicesOfLazilyErasedMemberships.push(_membership.index);
+        indicesOfLazilyErasedMemberships.push(membership.index);
 
         // Erase this membership from the memberships mapping
-        // Note: the Merkle tree data will be erased when the index is reused
         delete memberships[_idCommitment];
 
         if (membershipExpired) {
-            emit MembershipExpired(_idCommitment, _membership.rateLimit, _membership.index);
+            emit MembershipExpired(_idCommitment, membership.rateLimit, membership.index);
         }
-        emit MembershipErased(_idCommitment, _membership.rateLimit, _membership.index);
+        emit MembershipErased(_idCommitment, membership.rateLimit, membership.index);
+
+        // The caller uses this index to erase data from the membership set (the Merkle tree)
+        return membership.index;
     }
 
     /// @notice Determine if a membership is in grace period now
