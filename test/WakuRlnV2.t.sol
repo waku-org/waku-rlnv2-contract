@@ -659,12 +659,12 @@ contract WakuRlnV2Test is Test {
 
     function test__InvalidPaginationQuery__StartIndexGTEndIndex() external {
         vm.expectRevert(abi.encodeWithSelector(InvalidPaginationQuery.selector, 1, 0));
-        w.getRateCommitmentsInRange(1, 0);
+        w.getRateCommitmentsInRangeBoundsInclusive(1, 0);
     }
 
     function test__InvalidPaginationQuery__EndIndexGTNextFreeIndex() external {
         vm.expectRevert(abi.encodeWithSelector(InvalidPaginationQuery.selector, 0, 2));
-        w.getRateCommitmentsInRange(0, 2); // FIXME: > or >=?
+        w.getRateCommitmentsInRangeBoundsInclusive(0, 2);
     }
 
     function test__ValidPaginationQuery__OneElement() external {
@@ -676,7 +676,7 @@ contract WakuRlnV2Test is Test {
 
         token.approve(address(w), price);
         w.register(idCommitment, membershipRateLimit);
-        uint256[] memory commitments = w.getRateCommitmentsInRange(0, 0);
+        uint256[] memory commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, 0);
         assertEq(commitments.length, 1);
         uint256 rateCommitment = PoseidonT3.hash([idCommitment, membershipRateLimit]);
         assertEq(commitments[0], rateCommitment);
@@ -688,14 +688,14 @@ contract WakuRlnV2Test is Test {
         uint32 membershipRateLimit = w.minMembershipRateLimit();
         (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
 
-        for (uint256 i = 0; i < idCommitmentsLength; i++) {
+        for (uint256 i = 0; i <= idCommitmentsLength; i++) {
             token.approve(address(w), price);
             w.register(i + 1, membershipRateLimit);
         }
         vm.resumeGasMetering();
 
-        uint256[] memory rateCommitments = w.getRateCommitmentsInRange(0, idCommitmentsLength);
-        assertEq(rateCommitments.length, idCommitmentsLength + 1); // FIXME: check for off-by-one error here
+        uint256[] memory rateCommitments = w.getRateCommitmentsInRangeBoundsInclusive(0, idCommitmentsLength - 1);
+        assertEq(rateCommitments.length, idCommitmentsLength);
         for (uint256 i = 0; i < idCommitmentsLength; i++) {
             uint256 rateCommitment = PoseidonT3.hash([i + 1, membershipRateLimit]);
             assertEq(rateCommitments[i], rateCommitment);

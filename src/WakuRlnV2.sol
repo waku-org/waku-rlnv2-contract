@@ -37,21 +37,21 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @notice The Merkle tree that stores rate commitments of memberships
     LazyIMTData public merkleTree;
 
-    /// @notice the modifier to check if the idCommitment is valid
+    /// @notice Сheck if the idCommitment is valid
     /// @param idCommitment The idCommitment of the membership
     modifier onlyValidIdCommitment(uint256 idCommitment) {
         if (!isValidIdCommitment(idCommitment)) revert InvalidIdCommitment(idCommitment);
         _;
     }
 
-    /// @notice the modifier to check that the membership with this idCommitment doesn't already exist
+    /// @notice Сheck that the membership with this idCommitment is not already in the membership set
     /// @param idCommitment The idCommitment of the membership
     modifier noDuplicateMembership(uint256 idCommitment) {
         require(!isInMembershipSet(idCommitment), "Duplicate idCommitment: membership already exists");
         _;
     }
 
-    /// @notice the modifier to check that the membership set is not full
+    /// @notice Check that the membership set is not full
     modifier membershipSetNotFull() {
         require(nextFreeIndex < MAX_MEMBERSHIP_SET_SIZE, "Membership set is full");
         _;
@@ -61,7 +61,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         _disableInitializers();
     }
 
-    /// @dev contract initializer
+    /// @dev Contract initializer
     /// @param _priceCalculator Address of an instance of IPriceCalculator
     /// @param _maxTotalRateLimit Maximum total rate limit of all memberships in the membership set
     /// @param _minMembershipRateLimit Minimum rate limit of one membership
@@ -98,11 +98,11 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner { } // solhint-disable-line
 
-    /// @notice Checks if an idCommitment is valid
+    /// @notice Checks if an idCommitment is valid (between 0 and Q, both exclusive)
     /// @param idCommitment The idCommitment of the membership
     /// @return true if the idCommitment is valid, false otherwise
     function isValidIdCommitment(uint256 idCommitment) public pure returns (bool) {
-        return idCommitment != 0 && idCommitment < Q;
+        return 0 < idCommitment && idCommitment < Q;
     }
 
     /// @notice Checks if a membership is in the membership set
@@ -129,9 +129,16 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @param startIndex The start index of the range (inclusive)
     /// @param endIndex The end index of the range (inclusive)
     /// @return The rateCommitments of the memberships
-    function getRateCommitmentsInRange(uint32 startIndex, uint32 endIndex) public view returns (uint256[] memory) {
+    function getRateCommitmentsInRangeBoundsInclusive(
+        uint32 startIndex,
+        uint32 endIndex
+    )
+        public
+        view
+        returns (uint256[] memory)
+    {
         if (startIndex > endIndex) revert InvalidPaginationQuery(startIndex, endIndex);
-        if (endIndex > nextFreeIndex) revert InvalidPaginationQuery(startIndex, endIndex); //FIXME: should it be >=?
+        if (endIndex >= nextFreeIndex) revert InvalidPaginationQuery(startIndex, endIndex);
 
         uint256[] memory rateCommitments = new uint256[](endIndex - startIndex + 1);
         for (uint32 i = startIndex; i <= endIndex; i++) {
