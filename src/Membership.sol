@@ -296,11 +296,11 @@ abstract contract MembershipUpgradeable is Initializable {
     }
 
     /// @dev Determine whether the current timestamp is within a given period
-    /// @param _start timestamp in which the period starts
-    /// @param _duration duration of the period
+    /// @param _start timestamp in which the period starts (inclusive)
+    /// @param _duration duration of the period (end timestamp exclusive)
     function _isInPeriod(uint256 _start, uint32 _duration) internal view returns (bool) {
         uint256 timeNow = block.timestamp;
-        return (_start <= timeNow && timeNow <= _start + uint256(_duration));
+        return (_start <= timeNow && timeNow < _start + uint256(_duration));
     }
 
     /// @notice Determine if a membership is expired
@@ -311,11 +311,11 @@ abstract contract MembershipUpgradeable is Initializable {
     }
 
     /// @dev Determine whether the current timestamp is after a given period
-    /// @param _start timestamp in which the period starts
-    /// @param _duration duration of the period
+    /// @param _start timestamp in which the period starts (inclusive)
+    /// @param _duration duration of the period (end timestamp exclusive)
     function _isAfterPeriod(uint256 _start, uint32 _duration) internal view returns (bool) {
         uint256 timeNow = block.timestamp;
-        return (_start + uint256(_duration) < timeNow);
+        return (_timestampAfterPeriod(_start, _duration) <= timeNow);
     }
 
     /// @notice Returns the timestamp on which a membership can be considered expired (i.e. when its grace period ends)
@@ -326,10 +326,10 @@ abstract contract MembershipUpgradeable is Initializable {
     }
 
     /// @dev Returns the first timestamp after a specified period
-    /// @param _start timestamp in which the period starts
-    /// @param _duration duration of the period
+    /// @param _start timestamp in which the period starts (inclusive)
+    /// @param _duration duration of the period (exclusive)
     function _timestampAfterPeriod(uint256 _start, uint32 _duration) internal pure returns (uint256) {
-        return _start + uint256(_duration) + 1;
+        return _start + uint256(_duration);
     }
 
     /// @dev Withdraw any available deposit balance in tokens after a membership is erased.

@@ -268,7 +268,7 @@ contract WakuRlnV2Test is Test {
         w.extendMemberships(commitmentsToExtend);
 
         (,, uint256 newGracePeriodStartTimestamp, uint32 newGracePeriodDuration,,,,) = w.memberships(idCommitment);
-        uint256 expectedExpirationTimestamp = newGracePeriodStartTimestamp + uint256(newGracePeriodDuration) + 1;
+        uint256 expectedExpirationTimestamp = newGracePeriodStartTimestamp + uint256(newGracePeriodDuration);
         uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitment);
         assertEq(expectedExpirationTimestamp, membershipExpirationTimestamp);
         assertTrue(expectedExpirationTimestamp > ogExpirationTimestamp);
@@ -289,7 +289,7 @@ contract WakuRlnV2Test is Test {
 
         (,, uint256 fetchedgracePeriodStartTimestamp, uint32 fetchedGracePeriod,,,,) = w.memberships(idCommitment);
 
-        uint256 expectedExpirationTimestamp = fetchedgracePeriodStartTimestamp + uint256(fetchedGracePeriod) + 1;
+        uint256 expectedExpirationTimestamp = fetchedgracePeriodStartTimestamp + uint256(fetchedGracePeriod);
         uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitment);
 
         assertEq(expectedExpirationTimestamp, membershipExpirationTimestamp);
