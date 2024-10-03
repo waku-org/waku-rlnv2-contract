@@ -81,10 +81,11 @@ abstract contract MembershipUpgradeable is Initializable {
         address token;
     }
 
-    /// Emitted when a new membership is added to the membership set // FIXME: rateCommitment or membershipRateLimit?
-    /// @param rateCommitment The rateCommitment of the membership
+    /// Emitted when a new membership is added to the membership set
+    /// @param idCommitment the idCommitment of the membership
+    /// @param membershipRateLimit the rate limit of this membership
     /// @param index The index of the membership in the membership set
-    event MembershipRegistered(uint256 idCommitment, uint256 rateCommitment, uint32 index);
+    event MembershipRegistered(uint256 idCommitment, uint256 membershipRateLimit, uint32 index);
 
     /// @notice Emitted when a membership is expired (exceeded its grace period and not extended)
     /// @param idCommitment the idCommitment of the membership

@@ -201,7 +201,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
             nextFreeIndex += 1;
         }
 
-        emit MembershipRegistered(idCommitment, rateCommitment, index);
+        emit MembershipRegistered(idCommitment, rateLimit, index);
     }
 
     /// @notice Returns the root of the Merkle tree that stores rate commitments of memberships
