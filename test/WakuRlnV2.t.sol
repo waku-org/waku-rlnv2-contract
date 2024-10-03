@@ -436,7 +436,7 @@ contract WakuRlnV2Test is Test {
         // time travel to the moment we can erase all expired memberships
         uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitmentsLength);
         vm.warp(membershipExpirationTimestamp);
-        w.eraseMemberships(commitmentsToErase, false);
+        w.eraseMemberships(commitmentsToErase);
 
         // Verify that expired indices match what we expect
         for (uint32 i = 0; i < idCommitmentsLength; i++) {
@@ -508,7 +508,7 @@ contract WakuRlnV2Test is Test {
         emit MembershipUpgradeable.MembershipExpired(commitmentsToErase[0], 0, 0);
         vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
         emit MembershipUpgradeable.MembershipExpired(commitmentsToErase[0], 0, 0);
-        w.eraseMemberships(commitmentsToErase, false);
+        w.eraseMemberships(commitmentsToErase);
 
         address holder;
 
@@ -525,7 +525,7 @@ contract WakuRlnV2Test is Test {
         commitmentsToErase[0] = idCommitment;
         commitmentsToErase[1] = idCommitment + 4;
         vm.expectRevert(abi.encodeWithSelector(CannotEraseMembership.selector, idCommitment + 4));
-        w.eraseMemberships(commitmentsToErase, false);
+        w.eraseMemberships(commitmentsToErase);
     }
 
     function test__RemoveAllExpiredMemberships(uint32 idCommitmentsLength) external {
@@ -556,7 +556,7 @@ contract WakuRlnV2Test is Test {
             emit MembershipUpgradeable.MembershipExpired(i + 1, 0, 0);
         }
 
-        w.eraseMemberships(commitmentsToErase, false);
+        w.eraseMemberships(commitmentsToErase);
 
         // Erased memberships are gone!
         for (uint256 i = 0; i < commitmentsToErase.length; i++) {
@@ -588,7 +588,7 @@ contract WakuRlnV2Test is Test {
 
         uint256[] memory commitmentsToErase = new uint256[](1);
         commitmentsToErase[0] = idCommitment;
-        w.eraseMemberships(commitmentsToErase, false);
+        w.eraseMemberships(commitmentsToErase);
 
         uint256 availableBalance = w.depositsToWithdraw(address(this), address(token));
 

@@ -231,27 +231,34 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     }
 
     /// @notice Erase expired memberships or owned grace-period memberships
-    /// The user can select expired memberships offchain,
-    /// and proceed to erase them.
-    /// This function is also used by the holder to erase their own grace-period memberships.
+    /// The user can select expired memberships offchain, and proceed to erase them.
+    /// The holder can use this function to erase their own grace-period memberships.
     /// The holder can then withdraw the deposited tokens.
     /// @param idCommitments The list of idCommitments of the memberships to erase
-    /// @param eraseFromMembershipSet Indicates whether to erase the membership's rate commitment from the membership
     /// set
+    function eraseMemberships(uint256[] calldata idCommitments) external {
+        _eraseMemberships(idCommitments, false);
+    }
+
+    /// @notice Erase expired memberships or owned grace-period memberships
+    /// Optionally, also erase rate commitment data from the membership set (clean-up).
+    /// Compared to eraseMemberships(idCommitments),
+    /// this fucntion decreases Merkle tree size and spends more gas (if eraseFromMembershipSet == true).
+    /// @param idCommitments The list of idCommitments of the memberships to erase
+    /// @param eraseFromMembershipSet Indicates whether to erase membership data from the membership set
     function eraseMemberships(uint256[] calldata idCommitments, bool eraseFromMembershipSet) external {
         _eraseMemberships(idCommitments, eraseFromMembershipSet);
     }
 
     /// @dev Erase memberships from the list of idCommitments
     /// @param idCommitmentsToErase The idCommitments of memberships to erase from storage
-    /// @param eraseFromMembershipSet Indicates whether to erase membership data from the set
+    /// @param eraseFromMembershipSet Indicates whether to erase membership data from the membership set
     function _eraseMemberships(uint256[] calldata idCommitmentsToErase, bool eraseFromMembershipSet) internal {
         // eraseFromMembershipSet == true means full clean-up.
         //  Erase memberships from memberships array (free up the rate limit and index),
-        //  and also erase the rate limit from the Merkle tree that represents the membership set (reduce the tree
-        // size).
+        //  and erase the rate commitment from the membership set (reduce the Merkle tree size).
         // eraseFromMembershipSet == false means lazy erasure.
-        //  Only erase memberships from the membership array (consume less gas).
+        //  Only erase memberships from the memberships array (consume less gas).
         //  Merkle tree data will be overwritten when the correspondind index is reused.
         for (uint256 i = 0; i < idCommitmentsToErase.length; i++) {
             // Erase the membership from the memberships array in contract storage
