@@ -243,7 +243,7 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
     /// @notice Erase expired memberships or owned grace-period memberships
     /// Optionally, also erase rate commitment data from the membership set (clean-up).
     /// Compared to eraseMemberships(idCommitments),
-    /// this fucntion decreases Merkle tree size and spends more gas (if eraseFromMembershipSet == true).
+    /// this function decreases Merkle tree size and spends more gas (if eraseFromMembershipSet == true).
     /// @param idCommitments The list of idCommitments of the memberships to erase
     /// @param eraseFromMembershipSet Indicates whether to erase membership data from the membership set
     function eraseMemberships(uint256[] calldata idCommitments, bool eraseFromMembershipSet) external {
