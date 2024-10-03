@@ -205,7 +205,7 @@ contract WakuRlnV2Test is Test {
         vm.warp(gracePeriodStartTimestamp);
 
         assertTrue(w.isInGracePeriod(idCommitment));
-        assertFalse(w.isExpired(idCommitment)); // FIXME: what if grace period duration == 0?
+        assertFalse(w.isExpired(idCommitment));
 
         uint256[] memory commitmentsToExtend = new uint256[](1);
         commitmentsToExtend[0] = idCommitment;
@@ -240,6 +240,42 @@ contract WakuRlnV2Test is Test {
         commitmentsToExtend[0] = idCommitment + 1;
         vm.expectRevert(abi.encodeWithSelector(NotInGracePeriod.selector, commitmentsToExtend[0]));
         w.extendMemberships(commitmentsToExtend);
+    }
+
+    function test__ValidRegistrationNoGracePeriod(uint32 membershipRateLimit) external {
+        vm.pauseGasMetering();
+        uint256 idCommitment = 2;
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        vm.assume(
+            w.minMembershipRateLimit() <= membershipRateLimit && membershipRateLimit <= w.maxMembershipRateLimit()
+        );
+        vm.assume(w.isValidMembershipRateLimit(membershipRateLimit));
+
+        vm.startPrank(w.owner());
+        w.setGracePeriodDuration(0);
+        vm.stopPrank();
+
+        vm.resumeGasMetering();
+
+        token.approve(address(w), price);
+        w.register(idCommitment, membershipRateLimit);
+
+        (,, uint256 gracePeriodStartTimestamp, uint32 gracePeriodDuration,,,,) = w.memberships(idCommitment);
+
+        assertEq(gracePeriodDuration, 0);
+
+        assertFalse(w.isInGracePeriod(idCommitment));
+        assertFalse(w.isExpired(idCommitment));
+
+        uint256 expectedExpirationTimestamp = gracePeriodStartTimestamp + uint256(gracePeriodDuration);
+        uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitment);
+
+        assertEq(expectedExpirationTimestamp, membershipExpirationTimestamp);
+
+        vm.warp(membershipExpirationTimestamp);
+
+        assertFalse(w.isInGracePeriod(idCommitment));
+        assertTrue(w.isExpired(idCommitment));
     }
 
     function test__ValidRegistrationExtendSingleMembership(uint32 membershipRateLimit) external {
