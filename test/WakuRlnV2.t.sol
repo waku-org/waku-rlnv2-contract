@@ -48,8 +48,8 @@ contract WakuRlnV2Test is Test {
         vm.pauseGasMetering();
         assertEq(w.nextFreeIndex(), 1);
         assertEq(w.isInMembershipSet(idCommitment), true);
-        (,,,, uint32 fetchedMembershipRateLimit, uint32 index, address holder,) = w.memberships(idCommitment);
-        assertEq(fetchedMembershipRateLimit, membershipRateLimit);
+        (,,,, uint32 membershipRateLimit1, uint32 index, address holder,) = w.memberships(idCommitment);
+        assertEq(membershipRateLimit1, membershipRateLimit);
         assertEq(holder, address(this));
         assertEq(index, 0);
         // kats from zerokit
@@ -59,8 +59,8 @@ contract WakuRlnV2Test is Test {
             w.root(),
             13_801_897_483_540_040_307_162_267_952_866_411_686_127_372_014_953_358_983_481_592_640_000_001_877_295
         );
-        (uint32 fetchedMembershipRateLimit2, uint32 index2, uint256 rateCommitment2) = w.getMembershipInfo(idCommitment);
-        assertEq(fetchedMembershipRateLimit2, membershipRateLimit);
+        (uint32 membershipRateLimit2, uint32 index2, uint256 rateCommitment2) = w.getMembershipInfo(idCommitment);
+        assertEq(membershipRateLimit2, membershipRateLimit);
         assertEq(index2, 0);
         assertEq(rateCommitment2, rateCommitment);
         uint256[20] memory proof = w.getMerkleProof(0);

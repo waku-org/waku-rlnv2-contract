@@ -241,7 +241,7 @@ abstract contract MembershipUpgradeable is Initializable {
 
         // Note: we add the new active period to the end of the ongoing grace period
         uint256 newGracePeriodStartTimestamp =
-            (membership.gracePeriodStartTimestamp + membership.gracePeriodDuration + uint256(membership.activeDuration));
+            membership.gracePeriodStartTimestamp + membership.gracePeriodDuration + uint256(membership.activeDuration);
 
         membership.gracePeriodStartTimestamp = newGracePeriodStartTimestamp;
 
