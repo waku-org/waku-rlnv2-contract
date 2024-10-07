@@ -378,7 +378,7 @@ contract WakuRlnV2Test is Test {
         commitmentsToErase[1] = 2;
         commitmentsToErase[2] = 5; // This one is still active
         token.approve(address(w), priceB);
-        vm.expectRevert(abi.encodeWithSelector(CannotEraseMembership.selector, 5));
+        vm.expectRevert(abi.encodeWithSelector(CannotEraseActiveMembership.selector, 5));
         w.register(6, 60, commitmentsToErase);
 
         // Attempt to erase 3 memberships that can be erased
@@ -463,13 +463,34 @@ contract WakuRlnV2Test is Test {
         (, uint256 price) = w.priceCalculator().calculate(20);
         uint32 index;
         uint256[] memory commitmentsToErase = new uint256[](idCommitmentsLength);
+        uint256 time = block.timestamp;
         for (uint256 i = 1; i <= idCommitmentsLength; i++) {
             token.approve(address(w), price);
             w.register(i, 20, noCommitments);
             (,,,,, index,,) = w.memberships(i);
             assertEq(index, w.nextFreeIndex() - 1);
             commitmentsToErase[i - 1] = i;
+            time += 100;
+            vm.warp(time);
         }
+
+        // None of the commitments can be deleted because they're still active
+        uint256[] memory singleCommitmentToErase = new uint256[](1);
+        for (uint256 i = 1; i <= idCommitmentsLength; i++) {
+            singleCommitmentToErase[0] = i;
+            vm.expectRevert(abi.encodeWithSelector(CannotEraseActiveMembership.selector, i));
+            w.eraseMemberships(singleCommitmentToErase);
+        }
+
+        // Fastfwd to commitment grace period, and try to erase it without being the owner
+        (,, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(1);
+        vm.warp(gracePeriodStartTimestamp);
+        assertTrue(w.isInGracePeriod(1));
+        singleCommitmentToErase[0] = 1;
+        address randomAddress = vm.addr(block.timestamp);
+        vm.prank(randomAddress);
+        vm.expectRevert(abi.encodeWithSelector(NonHolderCannotErase.selector, 1));
+        w.eraseMemberships(singleCommitmentToErase);
 
         // time travel to the moment we can erase all expired memberships
         uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitmentsLength);
@@ -562,7 +583,7 @@ contract WakuRlnV2Test is Test {
         vm.warp(gracePeriodStartTimestamp - 1);
         commitmentsToErase[0] = idCommitment;
         commitmentsToErase[1] = idCommitment + 4;
-        vm.expectRevert(abi.encodeWithSelector(CannotEraseMembership.selector, idCommitment + 4));
+        vm.expectRevert(abi.encodeWithSelector(CannotEraseActiveMembership.selector, idCommitment + 4));
         w.eraseMemberships(commitmentsToErase);
     }
 

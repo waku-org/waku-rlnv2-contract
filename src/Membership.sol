@@ -19,8 +19,11 @@ error CannotExtendActiveMembership(uint256 idCommitment);
 // The sender is not the holder of this membership
 error NonHolderCannotExtend(uint256 idCommitment);
 
-// This membership cannot be erased
-error CannotEraseMembership(uint256 idCommitment);
+// The membership is still active
+error CannotEraseActiveMembership(uint256 idCommitment);
+
+// The sender is not the holder of this membership
+error NonHolderCannotErase(uint256 idCommitment);
 
 // This membership does not exist
 error MembershipDoesNotExist(uint256 idCommitment);
@@ -264,8 +267,10 @@ abstract contract MembershipUpgradeable is Initializable {
             _isInPeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration);
         bool isHolder = (membership.holder == _sender);
 
-        if (!membershipExpired && !(membershipIsInGracePeriod && isHolder)) {
-            revert CannotEraseMembership(_idCommitment);
+        if (!membershipExpired && !membershipIsInGracePeriod) {
+            revert CannotEraseActiveMembership(_idCommitment);
+        } else if (membershipIsInGracePeriod && !isHolder) {
+            revert NonHolderCannotErase(_idCommitment);
         }
 
         // Move deposit balance from the membership to be erased to holder deposit balance
