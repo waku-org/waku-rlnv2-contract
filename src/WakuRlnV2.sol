@@ -154,21 +154,6 @@ contract WakuRlnV2 is Initializable, Ownable2StepUpgradeable, UUPSUpgradeable, M
         return merkleTree.elements[LazyIMT.indexForElement(0, index)];
     }
 
-    /// @notice Register a membership
-    /// @param idCommitment The idCommitment of the new membership
-    /// @param rateLimit The rate limit of the new membership
-    function register(
-        uint256 idCommitment,
-        uint32 rateLimit
-    )
-        external
-        onlyValidIdCommitment(idCommitment)
-        noDuplicateMembership(idCommitment)
-        membershipSetNotFull
-    {
-        _register(idCommitment, rateLimit);
-    }
-
     /// @notice Register a membership while erasing some expired memberships to reuse their rate limit
     /// @param idCommitment The idCommitment of the new membership
     /// @param rateLimit The rate limit of the new membership
