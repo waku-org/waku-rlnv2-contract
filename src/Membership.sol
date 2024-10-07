@@ -11,13 +11,13 @@ error InvalidMembershipRateLimit();
 
 // Cannot acquire the rate limit for a new membership due to exceeding the expected limits
 // even after attempting to erase expired memberships
-error ExceededMaxTotalRateLimit();
+error CannotExceedMaxTotalRateLimit();
 
 // This membership is not in its grace period
-error NotInGracePeriod(uint256 idCommitment);
+error CannotExtendActiveMembership(uint256 idCommitment);
 
 // The sender is not the holder of this membership
-error AttemptedExtensionByNonHolder(uint256 idCommitment);
+error NonHolderCannotExtend(uint256 idCommitment);
 
 // This membership cannot be erased
 error CannotEraseMembership(uint256 idCommitment);
@@ -161,7 +161,7 @@ abstract contract MembershipUpgradeable is Initializable {
         gracePeriodDurationForNewMemberships = _gracePeriodDurationForNewMemberships;
     }
 
-    /// @dev acquire a membership and trasnfer the deposit to the contract
+    /// @dev acquire a membership and transfer the deposit to the contract
     /// @param _sender the address of the transaction sender
     /// @param _idCommitment the idCommitment of the new membership
     /// @param _rateLimit the membership rate limit
@@ -184,7 +184,7 @@ abstract contract MembershipUpgradeable is Initializable {
 
         // Determine if we exceed the total rate limit
         if (currentTotalRateLimit > maxTotalRateLimit) {
-            revert ExceededMaxTotalRateLimit();
+            revert CannotExceedMaxTotalRateLimit();
         }
 
         (address token, uint256 depositAmount) = priceCalculator.calculate(_rateLimit);
@@ -235,10 +235,10 @@ abstract contract MembershipUpgradeable is Initializable {
         MembershipInfo storage membership = memberships[_idCommitment];
 
         if (!_isInPeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration)) {
-            revert NotInGracePeriod(_idCommitment);
+            revert CannotExtendActiveMembership(_idCommitment);
         }
 
-        if (_sender != membership.holder) revert AttemptedExtensionByNonHolder(_idCommitment);
+        if (_sender != membership.holder) revert NonHolderCannotExtend(_idCommitment);
 
         // Note: we add the new active period to the end of the ongoing grace period
         uint256 newGracePeriodStartTimestamp =

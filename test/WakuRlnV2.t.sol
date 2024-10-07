@@ -213,7 +213,7 @@ contract WakuRlnV2Test is Test {
         // Attempt to extend the membership (but it is not owned by us)
         address randomAddress = vm.addr(block.timestamp);
         vm.prank(randomAddress);
-        vm.expectRevert(abi.encodeWithSelector(AttemptedExtensionByNonHolder.selector, commitmentsToExtend[0]));
+        vm.expectRevert(abi.encodeWithSelector(NonHolderCannotExtend.selector, commitmentsToExtend[0]));
         w.extendMemberships(commitmentsToExtend);
 
         // Attempt to extend the membership (but now we are the owner)
@@ -238,7 +238,7 @@ contract WakuRlnV2Test is Test {
         token.approve(address(w), price);
         w.register(idCommitment + 1, membershipRateLimit);
         commitmentsToExtend[0] = idCommitment + 1;
-        vm.expectRevert(abi.encodeWithSelector(NotInGracePeriod.selector, commitmentsToExtend[0]));
+        vm.expectRevert(abi.encodeWithSelector(CannotExtendActiveMembership.selector, commitmentsToExtend[0]));
         w.extendMemberships(commitmentsToExtend);
     }
 
@@ -367,7 +367,7 @@ contract WakuRlnV2Test is Test {
         token.approve(address(w), priceB);
 
         // Should fail. There's not enough free rate limit
-        vm.expectRevert(abi.encodeWithSelector(ExceededMaxTotalRateLimit.selector));
+        vm.expectRevert(abi.encodeWithSelector(CannotExceedMaxTotalRateLimit.selector));
         w.register(6, 60);
 
         // Attempt to erase 3 memberships including one that can't be erased (the last one)
@@ -438,7 +438,7 @@ contract WakuRlnV2Test is Test {
         membershipRateLimit = 2;
         (, price) = w.priceCalculator().calculate(membershipRateLimit);
         token.approve(address(w), price);
-        vm.expectRevert(abi.encodeWithSelector(ExceededMaxTotalRateLimit.selector));
+        vm.expectRevert(abi.encodeWithSelector(CannotExceedMaxTotalRateLimit.selector));
         w.register(3, membershipRateLimit);
 
         // Should register succesfully
@@ -451,7 +451,7 @@ contract WakuRlnV2Test is Test {
         membershipRateLimit = 1;
         (, price) = w.priceCalculator().calculate(membershipRateLimit);
         token.approve(address(w), price);
-        vm.expectRevert(abi.encodeWithSelector(ExceededMaxTotalRateLimit.selector));
+        vm.expectRevert(abi.encodeWithSelector(CannotExceedMaxTotalRateLimit.selector));
         w.register(4, membershipRateLimit);
     }
 
