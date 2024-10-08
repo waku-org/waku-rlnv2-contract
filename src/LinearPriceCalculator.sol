@@ -5,7 +5,7 @@ import { Ownable2Step } from "openzeppelin-contracts/contracts/access/Ownable2St
 import { IPriceCalculator } from "./IPriceCalculator.sol";
 
 /// Address 0x0000...0000 was used instead of an ERC20 token address
-error OnlyERC20TokensAllowed();
+error OnlyTokensAllowed();
 
 /// @title Linear Price Calculator to determine the price to acquire a membership
 contract LinearPriceCalculator is IPriceCalculator, Ownable2Step {
@@ -16,18 +16,23 @@ contract LinearPriceCalculator is IPriceCalculator, Ownable2Step {
     uint256 public pricePerMessagePerEpoch;
 
     constructor(address _token, uint256 _pricePerMessagePerEpoch) Ownable2Step() {
-        if (_token == address(0)) revert OnlyERC20TokensAllowed();
-        token = _token;
-        pricePerMessagePerEpoch = _pricePerMessagePerEpoch;
+        _setTokenAndPrice(_token, _pricePerMessagePerEpoch);
     }
 
     /// Set accepted token and price per message per epoch per period
-    /// @param _token The token accepted by the membership management for RLN
-    /// @param _pricePerPeriod Price per message per epoch
-    function setTokenAndPrice(address _token, uint256 _pricePerPeriod) external onlyOwner {
-        require(_token != address(0), "only tokens can be used");
+    /// @param _token The token accepted by RLN membership management
+    /// @param _pricePerMessagePerEpoch Price per message per epoch
+    function setTokenAndPrice(address _token, uint256 _pricePerMessagePerEpoch) external onlyOwner {
+        _setTokenAndPrice(_token, _pricePerMessagePerEpoch);
+    }
+
+    /// Set accepted token and price per message per epoch per period
+    /// @param _token The token accepted by RLN membership management
+    /// @param _pricePerMessagePerEpoch Price per message per epoch
+    function _setTokenAndPrice(address _token, uint256 _pricePerMessagePerEpoch) internal {
+        if (_token == address(0)) revert OnlyTokensAllowed();
         token = _token;
-        pricePerMessagePerEpoch = _pricePerPeriod;
+        pricePerMessagePerEpoch = _pricePerMessagePerEpoch;
     }
 
     /// Returns the token and price to pay in `token` for some `_rateLimit`

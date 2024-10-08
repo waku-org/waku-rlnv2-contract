@@ -22,6 +22,8 @@ contract WakuRlnV2Test is Test {
 
     address internal deployer;
 
+    uint256[] noIdCommitmentsToErase = new uint256[](0);
+
     function setUp() public virtual {
         token = new TestToken();
 
@@ -37,19 +39,19 @@ contract WakuRlnV2Test is Test {
         vm.pauseGasMetering();
         // Merkle tree leaves are calculated using 2 as rateLimit
         vm.prank(w.owner());
-        w.setMinRateLimitPerMembership(2);
+        w.setMinMembershipRateLimit(2);
 
         uint256 idCommitment = 2;
-        uint32 userMessageLimit = 2;
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        uint32 membershipRateLimit = 2;
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
         token.approve(address(w), price);
-        w.register(idCommitment, userMessageLimit);
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
         vm.pauseGasMetering();
-        assertEq(w.nextCommitmentIndex(), 1);
-        assertEq(w.memberExists(idCommitment), true);
-        (,,,,, uint32 fetchedUserMessageLimit, uint32 index, address holder,) = w.members(idCommitment);
-        assertEq(fetchedUserMessageLimit, userMessageLimit);
+        assertEq(w.nextFreeIndex(), 1);
+        assertEq(w.isInMembershipSet(idCommitment), true);
+        (,,,, uint32 membershipRateLimit1, uint32 index, address holder,) = w.memberships(idCommitment);
+        assertEq(membershipRateLimit1, membershipRateLimit);
         assertEq(holder, address(this));
         assertEq(index, 0);
         // kats from zerokit
@@ -59,12 +61,11 @@ contract WakuRlnV2Test is Test {
             w.root(),
             13_801_897_483_540_040_307_162_267_952_866_411_686_127_372_014_953_358_983_481_592_640_000_001_877_295
         );
-        (uint32 fetchedUserMessageLimit2, uint32 index2, uint256 rateCommitment2) =
-            w.idCommitmentToMetadata(idCommitment);
-        assertEq(fetchedUserMessageLimit2, userMessageLimit);
+        (uint32 membershipRateLimit2, uint32 index2, uint256 rateCommitment2) = w.getMembershipInfo(idCommitment);
+        assertEq(membershipRateLimit2, membershipRateLimit);
         assertEq(index2, 0);
         assertEq(rateCommitment2, rateCommitment);
-        uint256[20] memory proof = w.merkleProofElements(0);
+        uint256[20] memory proof = w.getMerkleProof(0);
         uint256[20] memory expectedProof = [
             0,
             14_744_269_619_966_411_208_579_211_824_598_458_697_587_494_354_926_760_081_771_325_075_741_142_829_156,
@@ -93,93 +94,58 @@ contract WakuRlnV2Test is Test {
         vm.resumeGasMetering();
     }
 
-    function test__ValidRegistration(uint32 userMessageLimit) external {
+    function test__ValidRegistration(uint32 membershipRateLimit) external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
-        uint256 minUserMessageLimit = w.minRateLimitPerMembership();
-        uint256 maxUserMessageLimit = w.maxRateLimitPerMembership();
-        vm.assume(userMessageLimit >= minUserMessageLimit && userMessageLimit <= maxUserMessageLimit);
-        vm.assume(w.isValidUserMessageLimit(userMessageLimit));
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        uint256 minMembershipRateLimit = w.minMembershipRateLimit();
+        uint256 maxMembershipRateLimit = w.maxMembershipRateLimit();
+        vm.assume(minMembershipRateLimit <= membershipRateLimit && membershipRateLimit <= maxMembershipRateLimit);
+        vm.assume(w.isValidMembershipRateLimit(membershipRateLimit));
         vm.resumeGasMetering();
 
-        assertEq(w.memberExists(idCommitment), false);
+        assertEq(w.isInMembershipSet(idCommitment), false);
         token.approve(address(w), price);
-        w.register(idCommitment, userMessageLimit);
-        uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
+        uint256 rateCommitment = PoseidonT3.hash([idCommitment, membershipRateLimit]);
 
-        (uint32 fetchedUserMessageLimit, uint32 index, uint256 fetchedRateCommitment) =
-            w.idCommitmentToMetadata(idCommitment);
-        assertEq(fetchedUserMessageLimit, userMessageLimit);
+        (uint32 fetchedMembershipRateLimit, uint32 index, uint256 fetchedRateCommitment) =
+            w.getMembershipInfo(idCommitment);
+        assertEq(fetchedMembershipRateLimit, membershipRateLimit);
         assertEq(index, 0);
         assertEq(fetchedRateCommitment, rateCommitment);
 
         assertEq(token.balanceOf(address(w)), price);
-        assertEq(w.totalRateLimitPerEpoch(), userMessageLimit);
+        assertEq(w.currentTotalRateLimit(), membershipRateLimit);
     }
 
-    function test__InsertionNormalOrder(uint32 idCommitmentsLength) external {
-        vm.assume(idCommitmentsLength > 0 && idCommitmentsLength <= 50);
-
-        uint32 userMessageLimit = w.minRateLimitPerMembership();
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
-
-        // Register some commitments
-        for (uint256 i = 0; i < idCommitmentsLength; i++) {
-            uint256 idCommitment = i + 1;
-            token.approve(address(w), price);
-            w.register(idCommitment, userMessageLimit);
-            (uint256 prev, uint256 next,,,,,,,) = w.members(idCommitment);
-            // new membership will always be the tail
-            assertEq(next, 0);
-            assertEq(w.tail(), idCommitment);
-            // current membership prevLink will always point to previous membership
-            assertEq(prev, idCommitment - 1);
-        }
-        assertEq(w.head(), 1);
-        assertEq(w.tail(), idCommitmentsLength);
-
-        // Ensure that prev and next are chained correctly
-        for (uint256 i = 0; i < idCommitmentsLength; i++) {
-            uint256 idCommitment = i + 1;
-            (uint256 prev, uint256 next,,,,,,,) = w.members(idCommitment);
-
-            assertEq(prev, idCommitment - 1);
-            if (i == idCommitmentsLength - 1) {
-                assertEq(next, 0);
-            } else {
-                assertEq(next, idCommitment + 1);
-            }
-        }
-    }
-
-    function test__LinearPriceCalculation(uint32 userMessageLimit) external view {
+    function test__LinearPriceCalculation(uint32 membershipRateLimit) external view {
         IPriceCalculator priceCalculator = w.priceCalculator();
         uint256 pricePerMessagePerPeriod = LinearPriceCalculator(address(priceCalculator)).pricePerMessagePerEpoch();
         assertNotEq(pricePerMessagePerPeriod, 0);
-        uint256 expectedPrice = uint256(userMessageLimit) * pricePerMessagePerPeriod;
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        uint256 expectedPrice = uint256(membershipRateLimit) * pricePerMessagePerPeriod;
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         assertEq(price, expectedPrice);
     }
 
-    function test__InvalidTokenAmount(uint256 idCommitment, uint32 userMessageLimit) external {
+    function test__InvalidTokenAmount(uint256 idCommitment, uint32 membershipRateLimit) external {
         vm.pauseGasMetering();
-        uint256 minUserMessageLimit = w.minRateLimitPerMembership();
-        uint256 maxUserMessageLimit = w.maxRateLimitPerMembership();
-        vm.assume(userMessageLimit >= minUserMessageLimit && userMessageLimit <= maxUserMessageLimit);
-        vm.assume(w.isValidCommitment(idCommitment) && w.isValidUserMessageLimit(userMessageLimit));
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        uint256 minMembershipRateLimit = w.minMembershipRateLimit();
+        uint256 maxMembershipRateLimit = w.maxMembershipRateLimit();
+        vm.assume(minMembershipRateLimit <= membershipRateLimit && membershipRateLimit <= maxMembershipRateLimit);
+        vm.assume(w.isValidIdCommitment(idCommitment) && w.isValidMembershipRateLimit(membershipRateLimit));
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
 
         token.approve(address(w), price - 1);
         vm.expectRevert(bytes("ERC20: insufficient allowance"));
-        w.register(idCommitment, userMessageLimit);
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
     }
 
     function test__IdCommitmentToMetadata__DoesntExist() external view {
         uint256 idCommitment = 2;
-        (uint32 userMessageLimit, uint32 index, uint256 rateCommitment) = w.idCommitmentToMetadata(idCommitment);
-        assertEq(userMessageLimit, 0);
+        (uint32 membershipRateLimit, uint32 index, uint256 rateCommitment) = w.getMembershipInfo(idCommitment);
+        assertEq(membershipRateLimit, 0);
         assertEq(index, 0);
         assertEq(rateCommitment, 0);
     }
@@ -187,69 +153,61 @@ contract WakuRlnV2Test is Test {
     function test__InvalidRegistration__InvalidIdCommitment__Zero() external {
         vm.pauseGasMetering();
         uint256 idCommitment = 0;
-        uint32 userMessageLimit = 2;
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        uint32 membershipRateLimit = 2;
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
 
         token.approve(address(w), price);
         vm.expectRevert(abi.encodeWithSelector(InvalidIdCommitment.selector, 0));
-        w.register(idCommitment, userMessageLimit);
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
     }
 
     function test__InvalidRegistration__InvalidIdCommitment__LargerThanField() external {
         vm.pauseGasMetering();
-        uint32 userMessageLimit = 20;
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        uint32 membershipRateLimit = 20;
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
 
         uint256 idCommitment = w.Q() + 1;
         token.approve(address(w), price);
         vm.expectRevert(abi.encodeWithSelector(InvalidIdCommitment.selector, idCommitment));
-        w.register(idCommitment, userMessageLimit);
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
     }
 
-    function test__InvalidRegistration__InvalidUserMessageLimit__MinMax() external {
+    function test__InvalidRegistration__InvalidMembershipRateLimit__MinMax() external {
         uint256 idCommitment = 2;
 
-        uint32 invalidMin = w.minRateLimitPerMembership() - 1;
-        uint32 invalidMax = w.maxRateLimitPerMembership() + 1;
+        uint32 invalidMin = w.minMembershipRateLimit() - 1;
+        uint32 invalidMax = w.maxMembershipRateLimit() + 1;
 
-        vm.expectRevert(abi.encodeWithSelector(InvalidRateLimit.selector));
-        w.register(idCommitment, invalidMin);
+        vm.expectRevert(abi.encodeWithSelector(InvalidMembershipRateLimit.selector));
+        w.register(idCommitment, invalidMin, noIdCommitmentsToErase);
 
-        vm.expectRevert(abi.encodeWithSelector(InvalidRateLimit.selector));
-        w.register(idCommitment, invalidMax);
+        vm.expectRevert(abi.encodeWithSelector(InvalidMembershipRateLimit.selector));
+        w.register(idCommitment, invalidMax, noIdCommitmentsToErase);
     }
 
-    function test__ValidRegistrationExtend(uint32 userMessageLimit) external {
+    function test__ValidRegistrationExtend(uint32 membershipRateLimit) external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         vm.assume(
-            userMessageLimit >= w.minRateLimitPerMembership() && userMessageLimit <= w.maxRateLimitPerMembership()
+            w.minMembershipRateLimit() <= membershipRateLimit && membershipRateLimit <= w.maxMembershipRateLimit()
         );
-        vm.assume(w.isValidUserMessageLimit(userMessageLimit));
+        vm.assume(w.isValidMembershipRateLimit(membershipRateLimit));
         vm.resumeGasMetering();
 
         token.approve(address(w), price);
-        w.register(idCommitment, userMessageLimit);
-        (,,, uint256 gracePeriodStartDate,,,,,) = w.members(idCommitment);
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
+        (,, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment);
 
-        assertFalse(w.isGracePeriod(idCommitment));
+        assertFalse(w.isInGracePeriod(idCommitment));
         assertFalse(w.isExpired(idCommitment));
 
-        vm.warp(gracePeriodStartDate);
+        vm.warp(gracePeriodStartTimestamp);
 
-        assertTrue(w.isGracePeriod(idCommitment));
+        assertTrue(w.isInGracePeriod(idCommitment));
         assertFalse(w.isExpired(idCommitment));
-
-        // Registering other memberships just to check linkage is correct
-        for (uint256 i = 1; i < 5; i++) {
-            token.approve(address(w), price);
-            w.register(idCommitment + i, userMessageLimit);
-        }
-
-        assertEq(w.head(), idCommitment);
 
         uint256[] memory commitmentsToExtend = new uint256[](1);
         commitmentsToExtend[0] = idCommitment;
@@ -257,476 +215,342 @@ contract WakuRlnV2Test is Test {
         // Attempt to extend the membership (but it is not owned by us)
         address randomAddress = vm.addr(block.timestamp);
         vm.prank(randomAddress);
-        vm.expectRevert(abi.encodeWithSelector(NotHolder.selector, commitmentsToExtend[0]));
-        w.extend(commitmentsToExtend);
+        vm.expectRevert(abi.encodeWithSelector(NonHolderCannotExtend.selector, commitmentsToExtend[0]));
+        w.extendMemberships(commitmentsToExtend);
 
         // Attempt to extend the membership (but now we are the owner)
         vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
-        emit MembershipUpgradeable.MemberExtended(idCommitment, 0, 0, 0);
-        w.extend(commitmentsToExtend);
+        emit MembershipUpgradeable.MembershipExtended(idCommitment, 0, 0, 0);
 
-        (,,, uint256 newGracePeriodStartDate,,,,,) = w.members(idCommitment);
+        (, uint256 oldActiveDuration, uint256 oldGracePeriodStartTimestamp, uint32 oldGracePeriodDuration,,,,) =
+            w.memberships(idCommitment);
+        w.extendMemberships(commitmentsToExtend);
+        (, uint256 newActiveDuration, uint256 newGracePeriodStartTimestamp, uint32 newGracePeriodDuration,,,,) =
+            w.memberships(idCommitment);
 
-        assertEq(block.timestamp + uint256(w.expirationTerm()), newGracePeriodStartDate);
-        assertFalse(w.isGracePeriod(idCommitment));
+        assertEq(oldActiveDuration, newActiveDuration);
+        assertEq(oldGracePeriodDuration, newGracePeriodDuration);
+        assertEq(
+            oldGracePeriodStartTimestamp + oldGracePeriodDuration + newActiveDuration, newGracePeriodStartTimestamp
+        );
+        assertFalse(w.isInGracePeriod(idCommitment));
         assertFalse(w.isExpired(idCommitment));
 
-        // Verify list order is correct
-        assertEq(w.tail(), idCommitment);
-        assertEq(w.head(), idCommitment + 1);
-
-        // Ensure that prev and next are chained correctly
-        for (uint256 i = 0; i < 5; i++) {
-            uint256 currIdCommitment = idCommitment + i;
-            (uint256 prev, uint256 next,,,,,,,) = w.members(currIdCommitment);
-            console.log("idCommitment: %s - prev: %s - next: %s", currIdCommitment, prev, next);
-            if (i == 0) {
-                // Verifying links of extended idCommitment
-                assertEq(next, 0);
-                assertEq(prev, idCommitment + 4);
-            } else if (i == 1) {
-                // The second element in the chain became the oldest
-                assertEq(next, currIdCommitment + 1);
-                assertEq(prev, 0);
-            } else if (i == 4) {
-                assertEq(prev, currIdCommitment - 1);
-                assertEq(next, idCommitment);
-            } else {
-                // The rest of the elements maintain their order
-                assertEq(prev, currIdCommitment - 1);
-                assertEq(next, currIdCommitment + 1);
-            }
-        }
-
         // Attempt to extend a non grace period membership
+        token.approve(address(w), price);
+        w.register(idCommitment + 1, membershipRateLimit, noIdCommitmentsToErase);
         commitmentsToExtend[0] = idCommitment + 1;
-        vm.expectRevert(abi.encodeWithSelector(NotInGracePeriod.selector, commitmentsToExtend[0]));
-        w.extend(commitmentsToExtend);
+        vm.expectRevert(abi.encodeWithSelector(CannotExtendNonGracePeriodMembership.selector, commitmentsToExtend[0]));
+        w.extendMemberships(commitmentsToExtend);
     }
 
-    function test__ValidRegistrationExtendSingleMembership(uint32 userMessageLimit) external {
+    function test__ValidRegistrationNoGracePeriod(uint32 membershipRateLimit) external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         vm.assume(
-            userMessageLimit >= w.minRateLimitPerMembership() && userMessageLimit <= w.maxRateLimitPerMembership()
+            w.minMembershipRateLimit() <= membershipRateLimit && membershipRateLimit <= w.maxMembershipRateLimit()
         );
-        vm.assume(w.isValidUserMessageLimit(userMessageLimit));
+        vm.assume(w.isValidMembershipRateLimit(membershipRateLimit));
+
+        vm.startPrank(w.owner());
+        w.setGracePeriodDuration(0);
+        vm.stopPrank();
+
         vm.resumeGasMetering();
 
         token.approve(address(w), price);
-        w.register(idCommitment, userMessageLimit);
-        (,,, uint256 gracePeriodStartDate,,,,,) = w.members(idCommitment);
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
 
-        vm.warp(gracePeriodStartDate);
+        (,, uint256 gracePeriodStartTimestamp, uint32 gracePeriodDuration,,,,) = w.memberships(idCommitment);
+
+        assertEq(gracePeriodDuration, 0);
+
+        assertFalse(w.isInGracePeriod(idCommitment));
+        assertFalse(w.isExpired(idCommitment));
+
+        uint256 expectedExpirationTimestamp = gracePeriodStartTimestamp + uint256(gracePeriodDuration);
+        uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitment);
+
+        assertEq(expectedExpirationTimestamp, membershipExpirationTimestamp);
+
+        vm.warp(membershipExpirationTimestamp);
+
+        assertFalse(w.isInGracePeriod(idCommitment));
+        assertTrue(w.isExpired(idCommitment));
+    }
+
+    function test__ValidRegistrationExtendSingleMembership(uint32 membershipRateLimit) external {
+        vm.pauseGasMetering();
+        uint256 idCommitment = 2;
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        vm.assume(
+            w.minMembershipRateLimit() <= membershipRateLimit && membershipRateLimit <= w.maxMembershipRateLimit()
+        );
+        vm.assume(w.isValidMembershipRateLimit(membershipRateLimit));
+        vm.resumeGasMetering();
+
+        token.approve(address(w), price);
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
+        uint256 ogExpirationTimestamp = w.membershipExpirationTimestamp(idCommitment);
+        (,, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment);
+
+        vm.warp(gracePeriodStartTimestamp);
 
         uint256[] memory commitmentsToExtend = new uint256[](1);
         commitmentsToExtend[0] = idCommitment;
 
         // Extend the membership
         vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
-        emit MembershipUpgradeable.MemberExtended(idCommitment, 0, 0, 0);
-        w.extend(commitmentsToExtend);
+        emit MembershipUpgradeable.MembershipExtended(idCommitment, 0, 0, 0);
+        w.extendMemberships(commitmentsToExtend);
 
-        // Verify list order is correct
-        assertEq(w.tail(), idCommitment);
-        assertEq(w.head(), idCommitment);
-        (uint256 prev, uint256 next,,,,,,,) = w.members(idCommitment);
-        assertEq(next, 0);
-        assertEq(prev, 0);
+        (,, uint256 newGracePeriodStartTimestamp, uint32 newGracePeriodDuration,,,,) = w.memberships(idCommitment);
+        uint256 expectedExpirationTimestamp = newGracePeriodStartTimestamp + uint256(newGracePeriodDuration);
+        uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitment);
+        assertEq(expectedExpirationTimestamp, membershipExpirationTimestamp);
+        assertTrue(expectedExpirationTimestamp > ogExpirationTimestamp);
     }
 
-    function test__ValidRegistrationExpiry(uint32 userMessageLimit) external {
+    function test__ValidRegistrationExpiry(uint32 membershipRateLimit) external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         vm.assume(
-            userMessageLimit >= w.minRateLimitPerMembership() && userMessageLimit <= w.maxRateLimitPerMembership()
+            w.minMembershipRateLimit() <= membershipRateLimit && membershipRateLimit <= w.maxMembershipRateLimit()
         );
-        vm.assume(w.isValidUserMessageLimit(userMessageLimit));
+        vm.assume(w.isValidMembershipRateLimit(membershipRateLimit));
         vm.resumeGasMetering();
 
         token.approve(address(w), price);
-        w.register(idCommitment, userMessageLimit);
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
 
-        (,,, uint256 fetchedGracePeriodStartDate, uint32 fetchedGracePeriod,,,,) = w.members(idCommitment);
+        (,, uint256 fetchedgracePeriodStartTimestamp, uint32 fetchedGracePeriod,,,,) = w.memberships(idCommitment);
 
-        uint256 expectedExpirationDate = fetchedGracePeriodStartDate + uint256(fetchedGracePeriod) + 1;
-        uint256 expirationDate = w.expirationDate(idCommitment);
+        uint256 expectedExpirationTimestamp = fetchedgracePeriodStartTimestamp + uint256(fetchedGracePeriod);
+        uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitment);
 
-        assertEq(expectedExpirationDate, expirationDate);
+        assertEq(expectedExpirationTimestamp, membershipExpirationTimestamp);
 
-        vm.warp(expirationDate);
+        vm.warp(membershipExpirationTimestamp);
 
-        assertFalse(w.isGracePeriod(idCommitment));
+        assertFalse(w.isInGracePeriod(idCommitment));
         assertTrue(w.isExpired(idCommitment));
-
-        // Registering other memberships just to check linkage is correct
-        for (uint256 i = 1; i <= 5; i++) {
-            token.approve(address(w), price);
-            w.register(idCommitment + i, userMessageLimit);
-        }
-
-        assertEq(w.head(), idCommitment);
-        assertEq(w.tail(), idCommitment + 5);
     }
 
     function test__ValidRegistrationWithEraseList() external {
         vm.pauseGasMetering();
         vm.startPrank(w.owner());
-        w.setMinRateLimitPerMembership(20);
-        w.setMaxRateLimitPerMembership(100);
-        w.setMaxTotalRateLimitPerEpoch(100);
+        w.setMinMembershipRateLimit(20);
+        w.setMaxMembershipRateLimit(100);
+        w.setMaxTotalRateLimit(100);
         vm.stopPrank();
         vm.resumeGasMetering();
 
-        (, uint256 price) = w.priceCalculator().calculate(20);
+        (, uint256 priceA) = w.priceCalculator().calculate(20);
 
         for (uint256 i = 1; i <= 5; i++) {
-            token.approve(address(w), price);
-            w.register(i, 20);
+            token.approve(address(w), priceA);
+            w.register(i, 20, noIdCommitmentsToErase);
             // Make sure they're expired
-            vm.warp(w.expirationDate(i));
+            vm.warp(w.membershipExpirationTimestamp(i));
         }
 
-        // Time travel to a point in which the last commitment is active
-        (,,, uint256 gracePeriodStartDate,,,,,) = w.members(5);
-        vm.warp(gracePeriodStartDate - 1);
+        // Time travel to a point in which the last membership is active
+        (,, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(5);
+        vm.warp(gracePeriodStartTimestamp - 1);
 
         // Ensure that this is the case
         assertTrue(w.isExpired(4));
         assertFalse(w.isExpired(5));
-        assertFalse(w.isGracePeriod(5));
+        assertFalse(w.isInGracePeriod(5));
 
-        (, price) = w.priceCalculator().calculate(60);
-        token.approve(address(w), price);
+        (, uint256 priceB) = w.priceCalculator().calculate(60);
+        token.approve(address(w), priceB);
 
-        // Attempt to expire 3 commitments including one that can't be erased (the last one)
+        // Should fail. There's not enough free rate limit
+        vm.expectRevert(abi.encodeWithSelector(CannotExceedMaxTotalRateLimit.selector));
+        w.register(6, 60, noIdCommitmentsToErase);
+
+        // Attempt to erase 3 memberships including one that can't be erased (the last one)
         uint256[] memory commitmentsToErase = new uint256[](3);
         commitmentsToErase[0] = 1;
         commitmentsToErase[1] = 2;
         commitmentsToErase[2] = 5; // This one is still active
-        token.approve(address(w), price);
-        vm.expectRevert(abi.encodeWithSelector(CantEraseMembership.selector, 5));
+        token.approve(address(w), priceB);
+        vm.expectRevert(abi.encodeWithSelector(CannotEraseActiveMembership.selector, 5));
         w.register(6, 60, commitmentsToErase);
 
-        // Attempt to expire 3 commitments that can be erased
+        // Attempt to erase 3 memberships that can be erased
         commitmentsToErase[2] = 4;
         vm.expectEmit(true, false, false, false);
-        emit MembershipUpgradeable.MemberExpired(1, 0, 0);
+        emit MembershipUpgradeable.MembershipExpired(1, 0, 0);
         vm.expectEmit(true, false, false, false);
-        emit MembershipUpgradeable.MemberExpired(2, 0, 0);
+        emit MembershipUpgradeable.MembershipExpired(2, 0, 0);
         vm.expectEmit(true, false, false, false);
-        emit MembershipUpgradeable.MemberExpired(4, 0, 0);
+        emit MembershipUpgradeable.MembershipExpired(4, 0, 0);
         w.register(6, 60, commitmentsToErase);
 
         // Ensure that the chosen memberships were erased and others unaffected
         address holder;
-        (,,,,,,, holder,) = w.members(1);
+        (,,,,,, holder,) = w.memberships(1);
         assertEq(holder, address(0));
-        (,,,,,,, holder,) = w.members(2);
+        (,,,,,, holder,) = w.memberships(2);
         assertEq(holder, address(0));
-        (,,,,,,, holder,) = w.members(3);
+        (,,,,,, holder,) = w.memberships(3);
         assertEq(holder, address(this));
-        (,,,,,,, holder,) = w.members(4);
+        (,,,,,, holder,) = w.memberships(4);
         assertEq(holder, address(0));
-        (,,,,,,, holder,) = w.members(5);
+        (,,,,,, holder,) = w.memberships(5);
         assertEq(holder, address(this));
-        (,,,,,,, holder,) = w.members(6);
+        (,,,,,, holder,) = w.memberships(6);
         assertEq(holder, address(this));
+
+        // The balance available for withdrawal should match the amount of the expired membership
+        uint256 availableBalance = w.depositsToWithdraw(address(this), address(token));
+        assertEq(availableBalance, priceA * 3);
     }
 
     function test__RegistrationWhenMaxRateLimitIsReached() external {
         vm.pauseGasMetering();
         vm.startPrank(w.owner());
-        w.setMinRateLimitPerMembership(1);
-        w.setMaxRateLimitPerMembership(5);
-        w.setMaxTotalRateLimitPerEpoch(5);
+        w.setMinMembershipRateLimit(1);
+        w.setMaxMembershipRateLimit(5);
+        w.setMaxTotalRateLimit(5);
         vm.stopPrank();
         vm.resumeGasMetering();
 
-        bool isValid = w.isValidUserMessageLimit(6);
+        bool isValid = w.isValidMembershipRateLimit(6);
         assertFalse(isValid);
 
-        // Exceeds the max rate limit per user
-        uint32 userMessageLimit = 10;
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        // Exceeds the max rate limit per membership
+        uint32 membershipRateLimit = 10;
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         token.approve(address(w), price);
-        vm.expectRevert(abi.encodeWithSelector(InvalidRateLimit.selector));
-        w.register(1, userMessageLimit);
+        vm.expectRevert(abi.encodeWithSelector(InvalidMembershipRateLimit.selector));
+        w.register(1, membershipRateLimit, noIdCommitmentsToErase);
 
         // Should register succesfully
-        userMessageLimit = 4;
-        (, price) = w.priceCalculator().calculate(userMessageLimit);
+        membershipRateLimit = 4;
+        (, price) = w.priceCalculator().calculate(membershipRateLimit);
         token.approve(address(w), price);
-        w.register(2, userMessageLimit);
+        w.register(2, membershipRateLimit, noIdCommitmentsToErase);
 
         // Exceeds the rate limit
-        userMessageLimit = 2;
-        (, price) = w.priceCalculator().calculate(userMessageLimit);
+        membershipRateLimit = 2;
+        (, price) = w.priceCalculator().calculate(membershipRateLimit);
         token.approve(address(w), price);
-        vm.expectRevert(abi.encodeWithSelector(ExceedAvailableMaxRateLimitPerEpoch.selector));
-        w.register(3, userMessageLimit);
+        vm.expectRevert(abi.encodeWithSelector(CannotExceedMaxTotalRateLimit.selector));
+        w.register(3, membershipRateLimit, noIdCommitmentsToErase);
 
         // Should register succesfully
-        userMessageLimit = 1;
-        (, price) = w.priceCalculator().calculate(userMessageLimit);
+        membershipRateLimit = 1;
+        (, price) = w.priceCalculator().calculate(membershipRateLimit);
         token.approve(address(w), price);
-        w.register(3, userMessageLimit);
+        w.register(3, membershipRateLimit, noIdCommitmentsToErase);
 
         // We ran out of rate limit again
-        userMessageLimit = 1;
-        (, price) = w.priceCalculator().calculate(userMessageLimit);
+        membershipRateLimit = 1;
+        (, price) = w.priceCalculator().calculate(membershipRateLimit);
         token.approve(address(w), price);
-        vm.expectRevert(abi.encodeWithSelector(ExceedAvailableMaxRateLimitPerEpoch.selector));
-        w.register(4, userMessageLimit);
-    }
-
-    function test__RegistrationWhenMaxRateLimitIsReachedAndSingleExpiredMemberAvailable() external {
-        vm.pauseGasMetering();
-        vm.startPrank(w.owner());
-        w.setMinRateLimitPerMembership(1);
-        w.setMaxRateLimitPerMembership(5);
-        w.setMaxTotalRateLimitPerEpoch(5);
-        vm.stopPrank();
-        vm.resumeGasMetering();
-
-        uint32 userMessageLimitA = 2;
-        uint32 totalUserMessageLimit = userMessageLimitA;
-        (, uint256 priceA) = w.priceCalculator().calculate(userMessageLimitA);
-        token.approve(address(w), priceA);
-        w.register(1, userMessageLimitA);
-
-        (,,, uint256 gracePeriodStartDate,,, uint32 indexA,,) = w.members(1);
-        vm.warp(gracePeriodStartDate + 1);
-
-        // Exceeds the rate limit, but if the first were expired, it should register
-        // It is in grace period so can't be erased
-        assertTrue(w.isGracePeriod(1));
-        assertFalse(w.isExpired(1));
-        uint32 userMessageLimitB = 4;
-        (, uint256 priceB) = w.priceCalculator().calculate(userMessageLimitB);
-        (, priceB) = w.priceCalculator().calculate(userMessageLimitB);
-        token.approve(address(w), priceB);
-        vm.expectRevert(abi.encodeWithSelector(ExceedAvailableMaxRateLimitPerEpoch.selector));
-        w.register(2, userMessageLimitB);
-
-        // FFW until the membership is expired so we can get rid of it
-        uint256 expirationDate = w.expirationDate(1);
-        vm.warp(expirationDate);
-        assertTrue(w.isExpired(1));
-
-        // It should succeed now
-        vm.expectEmit();
-        emit MembershipUpgradeable.MemberExpired(1, userMessageLimitA, indexA);
-        w.register(2, userMessageLimitB);
-
-        // The previous expired membership should have been erased
-        (,,,,,,, address holder,) = w.members(1);
-        assertEq(holder, address(0));
-
-        uint32 expectedUserMessageLimit = totalUserMessageLimit - userMessageLimitA + userMessageLimitB;
-        assertEq(expectedUserMessageLimit, w.totalRateLimitPerEpoch());
-
-        // The new commitment should be the only element in the list
-        assertEq(w.head(), 2);
-        assertEq(w.tail(), 2);
-        (uint256 prev, uint256 next,,,,, uint32 indexB,,) = w.members(2);
-        assertEq(prev, 0);
-        assertEq(next, 0);
-
-        // Index should have been reused
-        assertEq(indexA, indexB);
-
-        // The balance available for withdrawal should match the amount of the expired membership
-        uint256 availableBalance = w.balancesToWithdraw(address(this), address(token));
-        assertEq(availableBalance, priceA);
-    }
-
-    function test__RegistrationWhenMaxRateLimitIsReachedAndMultipleExpiredMembersAvailable() external {
-        vm.pauseGasMetering();
-        vm.startPrank(w.owner());
-        w.setMinRateLimitPerMembership(1);
-        w.setMaxRateLimitPerMembership(5);
-        w.setMaxTotalRateLimitPerEpoch(5);
-        vm.stopPrank();
-        vm.resumeGasMetering();
-
-        (, uint256 priceA) = w.priceCalculator().calculate(1);
-        token.approve(address(w), priceA);
-        w.register(1, 1);
-        vm.warp(block.timestamp + 100);
-        token.approve(address(w), priceA);
-        w.register(2, 1);
-        vm.warp(block.timestamp + 100);
-        uint256 expirationDate = w.expirationDate(2);
-        vm.warp(expirationDate);
-        token.approve(address(w), priceA);
-        w.register(3, 1);
-
-        // Make sure only the first 2 memberships are expired
-        assertTrue(w.isExpired(1));
-        assertTrue(w.isExpired(2));
-        assertFalse(w.isExpired(3) || w.isGracePeriod(3));
-
-        (,,,,,, uint32 index1,,) = w.members(1);
-        (,,,,,, uint32 index2,,) = w.members(2);
-
-        // Attempt to register a membership that will require to expire 2 memberships
-        // Currently there is 2 available, and we want to register 4
-        // If we remove first membership, we'll have 3 available
-        // If we also remove the second, we'll have 4 available
-        (, uint256 priceB) = w.priceCalculator().calculate(4);
-        token.approve(address(w), priceB);
-        vm.expectEmit(true, false, false, false);
-        emit MembershipUpgradeable.MemberExpired(1, 0, 0);
-        vm.expectEmit(true, false, false, false);
-        emit MembershipUpgradeable.MemberExpired(2, 0, 0);
-        w.register(4, 4);
-
-        // idCommitment4 will use the last removed index available (since we push to an array)
-        (,,,,,, uint32 index4,,) = w.members(4);
-        assertEq(index4, index2);
-
-        // the index of the first removed membership is still available for further registrations
-        assertEq(index1, w.availableExpiredIndices(0));
-
-        // The previous expired memberships should have been erased
-        (,,,,,,, address holder,) = w.members(1);
-        assertEq(holder, address(0));
-        (,,,,,,, holder,) = w.members(2);
-        assertEq(holder, address(0));
-
-        // The total rate limit used should be those from idCommitment 3 and 4
-        assertEq(5, w.totalRateLimitPerEpoch());
-
-        // There should only be 2 memberships, the non expired and the new one
-        assertEq(w.head(), 3);
-        assertEq(w.tail(), 4);
-        (uint256 prev, uint256 next,,,,,,,) = w.members(3);
-        assertEq(prev, 0);
-        assertEq(next, 4);
-        (prev, next,,,,,,,) = w.members(4);
-        assertEq(prev, 3);
-        assertEq(next, 0);
-
-        // The balance available for withdrawal should match the amount of the expired membership
-        uint256 availableBalance = w.balancesToWithdraw(address(this), address(token));
-        assertEq(availableBalance, priceA * 2);
-    }
-
-    function test__RegistrationWhenMaxRateLimitReachedAndMultipleExpiredMembersAvailableWithoutEnoughRateLimit()
-        external
-    {
-        vm.pauseGasMetering();
-        vm.startPrank(w.owner());
-        w.setMinRateLimitPerMembership(1);
-        w.setMaxRateLimitPerMembership(5);
-        w.setMaxTotalRateLimitPerEpoch(5);
-        vm.stopPrank();
-        vm.resumeGasMetering();
-
-        (, uint256 priceA) = w.priceCalculator().calculate(1);
-        token.approve(address(w), priceA);
-        w.register(1, 1);
-        vm.warp(block.timestamp + 100);
-        token.approve(address(w), priceA);
-        w.register(2, 1);
-        vm.warp(block.timestamp + 100);
-        uint256 expirationDate = w.expirationDate(2);
-        vm.warp(expirationDate);
-        token.approve(address(w), priceA);
-        w.register(3, 1);
-
-        // Make sure only the first 2 memberships are expired
-        assertTrue(w.isExpired(1));
-        assertTrue(w.isExpired(2));
-        assertFalse(w.isExpired(3) || w.isGracePeriod(3));
-
-        // Attempt to register a membership that will require to expire 2 memberships
-        // Currently there is 2 available, and we want to register 5
-        // If we remove first membership, we'll have 3 available
-        // If we also remove the second, we'll have 4 available, but it is still not enough
-        // for registering
-        (, uint256 priceB) = w.priceCalculator().calculate(5);
-        token.approve(address(w), priceB);
-        vm.expectRevert(abi.encodeWithSelector(ExceedAvailableMaxRateLimitPerEpoch.selector));
-        w.register(4, 5);
+        vm.expectRevert(abi.encodeWithSelector(CannotExceedMaxTotalRateLimit.selector));
+        w.register(4, membershipRateLimit, noIdCommitmentsToErase);
     }
 
     function test__indexReuse_eraseMemberships(uint32 idCommitmentsLength) external {
-        vm.assume(idCommitmentsLength > 0 && idCommitmentsLength < 50);
+        vm.assume(0 < idCommitmentsLength && idCommitmentsLength < 50);
 
         (, uint256 price) = w.priceCalculator().calculate(20);
         uint32 index;
         uint256[] memory commitmentsToErase = new uint256[](idCommitmentsLength);
+        uint256 time = block.timestamp;
         for (uint256 i = 1; i <= idCommitmentsLength; i++) {
             token.approve(address(w), price);
-            w.register(i, 20);
-            (,,,,,, index,,) = w.members(i);
-            assertEq(index, w.nextCommitmentIndex() - 1);
+            w.register(i, 20, noIdCommitmentsToErase);
+            (,,,,, index,,) = w.memberships(i);
+            assertEq(index, w.nextFreeIndex() - 1);
             commitmentsToErase[i - 1] = i;
+            time += 100;
+            vm.warp(time);
         }
 
+        // None of the commitments can be deleted because they're still active
+        uint256[] memory singleCommitmentToErase = new uint256[](1);
+        for (uint256 i = 1; i <= idCommitmentsLength; i++) {
+            singleCommitmentToErase[0] = i;
+            vm.expectRevert(abi.encodeWithSelector(CannotEraseActiveMembership.selector, i));
+            w.eraseMemberships(singleCommitmentToErase);
+        }
+
+        // Fastfwd to commitment grace period, and try to erase it without being the owner
+        (,, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(1);
+        vm.warp(gracePeriodStartTimestamp);
+        assertTrue(w.isInGracePeriod(1));
+        singleCommitmentToErase[0] = 1;
+        address randomAddress = vm.addr(block.timestamp);
+        vm.prank(randomAddress);
+        vm.expectRevert(abi.encodeWithSelector(NonHolderCannotEraseGracePeriodMembership.selector, 1));
+        w.eraseMemberships(singleCommitmentToErase);
+
         // time travel to the moment we can erase all expired memberships
-        uint256 expirationDate = w.expirationDate(idCommitmentsLength);
-        vm.warp(expirationDate);
+        uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitmentsLength);
+        vm.warp(membershipExpirationTimestamp);
         w.eraseMemberships(commitmentsToErase);
 
         // Verify that expired indices match what we expect
         for (uint32 i = 0; i < idCommitmentsLength; i++) {
-            assertEq(i, w.availableExpiredIndices(i));
+            assertEq(i, w.indicesOfLazilyErasedMemberships(i));
         }
 
-        uint32 currnextCommitmentIndex = w.nextCommitmentIndex();
+        uint32 expectedNextFreeIndex = w.nextFreeIndex();
         for (uint256 i = 1; i <= idCommitmentsLength; i++) {
             uint256 idCommitment = i + 10;
-            uint256 expectedReusedIndexPos = idCommitmentsLength - i;
-            uint32 expectedIndex = w.availableExpiredIndices(expectedReusedIndexPos);
+            uint256 expectedindexReusedPos = idCommitmentsLength - i;
+            uint32 expectedReusedIndex = w.indicesOfLazilyErasedMemberships(expectedindexReusedPos);
             token.approve(address(w), price);
-            w.register(idCommitment, 20);
-            (,,,,,, index,,) = w.members(idCommitment);
-            assertEq(expectedIndex, index);
+            w.register(idCommitment, 20, noIdCommitmentsToErase);
+            (,,,,, index,,) = w.memberships(idCommitment);
+            assertEq(expectedReusedIndex, index);
             // Should have been removed from the list
             vm.expectRevert();
-            w.availableExpiredIndices(expectedReusedIndexPos);
+            w.indicesOfLazilyErasedMemberships(expectedindexReusedPos);
             // Should not have been affected
-            assertEq(currnextCommitmentIndex, w.nextCommitmentIndex());
+            assertEq(expectedNextFreeIndex, w.nextFreeIndex());
         }
 
-        // No indexes should be available for reuse
+        // No indices should be available for reuse
         vm.expectRevert();
-        w.availableExpiredIndices(0);
+        w.indicesOfLazilyErasedMemberships(0);
 
-        // Should use a new index since we got rid of all available indexes
+        // Should use a new index since we got rid of all reusable indexes
         token.approve(address(w), price);
-        w.register(100, 20);
-        (,,,,,, index,,) = w.members(100);
-        assertEq(index, currnextCommitmentIndex);
-        assertEq(currnextCommitmentIndex + 1, w.nextCommitmentIndex());
+        w.register(100, 20, noIdCommitmentsToErase);
+        (,,,,, index,,) = w.memberships(100);
+        assertEq(index, expectedNextFreeIndex);
+        assertEq(expectedNextFreeIndex + 1, w.nextFreeIndex());
     }
 
-    function test__RemoveExpiredMemberships(uint32 userMessageLimit) external {
+    function test__RemoveExpiredMemberships(uint32 membershipRateLimit) external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         vm.assume(
-            userMessageLimit >= w.minRateLimitPerMembership() && userMessageLimit <= w.maxRateLimitPerMembership()
+            w.minMembershipRateLimit() <= membershipRateLimit && membershipRateLimit <= w.maxMembershipRateLimit()
         );
-        vm.assume(w.isValidUserMessageLimit(userMessageLimit));
+        vm.assume(w.isValidMembershipRateLimit(membershipRateLimit));
         vm.resumeGasMetering();
 
         uint256 time = block.timestamp;
         for (uint256 i = 0; i < 5; i++) {
             token.approve(address(w), price);
-            w.register(idCommitment + i, userMessageLimit);
+            w.register(idCommitment + i, membershipRateLimit, noIdCommitmentsToErase);
             time += 100;
             vm.warp(time);
         }
 
-        // Expiring the first 3
-        uint256 expirationDate = w.expirationDate(idCommitment + 2);
-        vm.warp(expirationDate);
+        // Expiring the first 3 memberships
+        uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitment + 2);
+        vm.warp(membershipExpirationTimestamp);
         for (uint256 i = 0; i < 5; i++) {
             if (i <= 2) {
                 assertTrue(w.isExpired(idCommitment + i));
@@ -740,61 +564,46 @@ contract WakuRlnV2Test is Test {
         commitmentsToErase[1] = idCommitment + 2;
 
         vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
-        emit MembershipUpgradeable.MemberExpired(commitmentsToErase[0], 0, 0);
+        emit MembershipUpgradeable.MembershipExpired(commitmentsToErase[0], 0, 0);
         vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
-        emit MembershipUpgradeable.MemberExpired(commitmentsToErase[0], 0, 0);
+        emit MembershipUpgradeable.MembershipExpired(commitmentsToErase[0], 0, 0);
         w.eraseMemberships(commitmentsToErase);
 
         address holder;
 
-        (,,,,,,, holder,) = w.members(idCommitment + 1);
+        (,,,,,, holder,) = w.memberships(idCommitment + 1);
         assertEq(holder, address(0));
 
-        (,,,,,,, holder,) = w.members(idCommitment + 2);
+        (,,,,,, holder,) = w.memberships(idCommitment + 2);
         assertEq(holder, address(0));
-
-        // Verify list order is correct
-        uint256 prev;
-        uint256 next;
-        (prev, next,,,,,,,) = w.members(idCommitment);
-        assertEq(prev, 0);
-        assertEq(next, idCommitment + 3);
-        (prev, next,,,,,,,) = w.members(idCommitment + 3);
-        assertEq(prev, idCommitment);
-        assertEq(next, idCommitment + 4);
-        (prev, next,,,,,,,) = w.members(idCommitment + 4);
-        assertEq(prev, idCommitment + 3);
-        assertEq(next, 0);
-        assertEq(w.head(), idCommitment);
-        assertEq(w.tail(), idCommitment + 4);
 
         // Attempting to call erase when some of the commitments can't be erased yet
         // idCommitment can be erased (in grace period), but idCommitment + 4 is still active
-        (,,, uint256 gracePeriodStartDate,,,,,) = w.members(idCommitment + 4);
-        vm.warp(gracePeriodStartDate - 1);
+        (,, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment + 4);
+        vm.warp(gracePeriodStartTimestamp - 1);
         commitmentsToErase[0] = idCommitment;
         commitmentsToErase[1] = idCommitment + 4;
-        vm.expectRevert(abi.encodeWithSelector(CantEraseMembership.selector, idCommitment + 4));
+        vm.expectRevert(abi.encodeWithSelector(CannotEraseActiveMembership.selector, idCommitment + 4));
         w.eraseMemberships(commitmentsToErase);
     }
 
     function test__RemoveAllExpiredMemberships(uint32 idCommitmentsLength) external {
         vm.pauseGasMetering();
-        vm.assume(idCommitmentsLength > 1 && idCommitmentsLength <= 100);
-        uint32 userMessageLimit = w.minRateLimitPerMembership();
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        vm.assume(1 < idCommitmentsLength && idCommitmentsLength <= 100);
+        uint32 membershipRateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
 
         uint256 time = block.timestamp;
         for (uint256 i = 1; i <= idCommitmentsLength; i++) {
             token.approve(address(w), price);
-            w.register(i, userMessageLimit);
+            w.register(i, membershipRateLimit, noIdCommitmentsToErase);
             time += 100;
             vm.warp(time);
         }
 
-        uint256 expirationDate = w.expirationDate(idCommitmentsLength);
-        vm.warp(expirationDate);
+        uint256 membershipExpirationTimestamp = w.membershipExpirationTimestamp(idCommitmentsLength);
+        vm.warp(membershipExpirationTimestamp);
         for (uint256 i = 1; i <= 5; i++) {
             assertTrue(w.isExpired(i));
         }
@@ -803,60 +612,44 @@ contract WakuRlnV2Test is Test {
         for (uint256 i = 0; i < idCommitmentsLength; i++) {
             commitmentsToErase[i] = i + 1;
             vm.expectEmit(true, false, false, false); // only check the first parameter of the event (the idCommitment)
-            emit MembershipUpgradeable.MemberExpired(i + 1, 0, 0);
+            emit MembershipUpgradeable.MembershipExpired(i + 1, 0, 0);
         }
 
         w.eraseMemberships(commitmentsToErase);
 
-        // No memberships registered
-        assertEq(w.head(), 0);
-        assertEq(w.tail(), 0);
-
-        for (uint256 i = 10; i <= idCommitmentsLength + 10; i++) {
-            token.approve(address(w), price);
-            w.register(i, userMessageLimit);
-            assertEq(w.tail(), i);
+        // Erased memberships are gone!
+        for (uint256 i = 0; i < commitmentsToErase.length; i++) {
+            (,,,, uint32 fetchedMembershipRateLimit,,,) = w.memberships(commitmentsToErase[i]);
+            assertEq(fetchedMembershipRateLimit, 0);
         }
-
-        // Verify list order is correct
-        assertEq(w.head(), 10);
-        assertEq(w.tail(), idCommitmentsLength + 10);
-        uint256 prev;
-        uint256 next;
-        (prev, next,,,,,,,) = w.members(10);
-        assertEq(prev, 0);
-        assertEq(next, 11);
-        (prev, next,,,,,,,) = w.members(idCommitmentsLength + 10);
-        assertEq(prev, idCommitmentsLength + 9);
-        assertEq(next, 0);
     }
 
-    function test__WithdrawToken(uint32 userMessageLimit) external {
+    function test__WithdrawToken(uint32 membershipRateLimit) external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
         LinearPriceCalculator priceCalculator = LinearPriceCalculator(address(w.priceCalculator()));
         vm.prank(priceCalculator.owner());
         priceCalculator.setTokenAndPrice(address(token), 5 wei);
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         token.mint(address(this), price);
         vm.assume(
-            userMessageLimit >= w.minRateLimitPerMembership() && userMessageLimit <= w.maxRateLimitPerMembership()
+            w.minMembershipRateLimit() <= membershipRateLimit && membershipRateLimit <= w.maxMembershipRateLimit()
         );
-        vm.assume(w.isValidUserMessageLimit(userMessageLimit));
+        vm.assume(w.isValidMembershipRateLimit(membershipRateLimit));
         vm.resumeGasMetering();
 
         token.approve(address(w), price);
-        w.register(idCommitment, userMessageLimit);
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
 
-        (,,, uint256 gracePeriodStartDate,,,,,) = w.members(idCommitment);
+        (,, uint256 gracePeriodStartTimestamp,,,,,) = w.memberships(idCommitment);
 
-        vm.warp(gracePeriodStartDate);
+        vm.warp(gracePeriodStartTimestamp);
 
         uint256[] memory commitmentsToErase = new uint256[](1);
         commitmentsToErase[0] = idCommitment;
         w.eraseMemberships(commitmentsToErase);
 
-        uint256 availableBalance = w.balancesToWithdraw(address(this), address(token));
+        uint256 availableBalance = w.depositsToWithdraw(address(this), address(token));
 
         assertEq(availableBalance, price);
         assertEq(token.balanceOf(address(w)), price);
@@ -867,7 +660,7 @@ contract WakuRlnV2Test is Test {
 
         uint256 balanceAfterWithdraw = token.balanceOf(address(this));
 
-        availableBalance = w.balancesToWithdraw(address(this), address(token));
+        availableBalance = w.depositsToWithdraw(address(this), address(token));
         assertEq(availableBalance, 0);
         assertEq(token.balanceOf(address(w)), 0);
         assertEq(balanceBeforeWithdraw + price, balanceAfterWithdraw);
@@ -876,29 +669,29 @@ contract WakuRlnV2Test is Test {
     function test__InvalidRegistration__DuplicateIdCommitment() external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
-        uint32 userMessageLimit = w.minRateLimitPerMembership();
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        uint32 membershipRateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
 
         token.approve(address(w), price);
-        w.register(idCommitment, userMessageLimit);
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
 
         token.approve(address(w), price);
-        vm.expectRevert(DuplicateIdCommitment.selector);
-        w.register(idCommitment, userMessageLimit);
+        vm.expectRevert(bytes("Duplicate idCommitment: membership already exists"));
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
     }
 
     function test__InvalidRegistration__FullTree() external {
         vm.pauseGasMetering();
-        uint32 userMessageLimit = 20;
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        uint32 membershipRateLimit = 20;
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
 
         // we progress the tree to the last leaf
 
         /*| Name                | Type                                                | Slot | Offset | Bytes |
           |---------------------|-----------------------------------------------------|------|--------|-------|
-          | nextCommitmentIndex | uint32                                              | 256  | 0      | 4     | */
+          | nextFreeIndex | uint32                                              | 256  | 0      | 4     | */
 
         /*
         Pro tip: to easily find the storage slot of a variable, without having to calculate the storage layout
@@ -916,55 +709,55 @@ contract WakuRlnV2Test is Test {
         If the storage layout changes, update the next line accordingly
         */
 
-        // we set nextCommitmentIndex to 4294967295 (1 << 20) = 0x00100000
+        // we set nextFreeIndex to 4294967295 (1 << 20) = 0x00100000
         vm.store(address(w), bytes32(uint256(256)), 0x0000000000000000000000000000000000000000000000000000000000100000);
         token.approve(address(w), price);
-        vm.expectRevert(FullTree.selector);
-        w.register(1, userMessageLimit);
+        vm.expectRevert(bytes("Membership set is full"));
+        w.register(1, membershipRateLimit, noIdCommitmentsToErase);
     }
 
     function test__InvalidPaginationQuery__StartIndexGTEndIndex() external {
         vm.expectRevert(abi.encodeWithSelector(InvalidPaginationQuery.selector, 1, 0));
-        w.getCommitments(1, 0);
+        w.getRateCommitmentsInRangeBoundsInclusive(1, 0);
     }
 
-    function test__InvalidPaginationQuery__EndIndexGTnextCommitmentIndex() external {
+    function test__InvalidPaginationQuery__EndIndexGTNextFreeIndex() external {
         vm.expectRevert(abi.encodeWithSelector(InvalidPaginationQuery.selector, 0, 2));
-        w.getCommitments(0, 2);
+        w.getRateCommitmentsInRangeBoundsInclusive(0, 2);
     }
 
     function test__ValidPaginationQuery__OneElement() external {
         vm.pauseGasMetering();
         uint256 idCommitment = 1;
-        uint32 userMessageLimit = w.minRateLimitPerMembership();
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        uint32 membershipRateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
         vm.resumeGasMetering();
 
         token.approve(address(w), price);
-        w.register(idCommitment, userMessageLimit);
-        uint256[] memory commitments = w.getCommitments(0, 0);
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
+        uint256[] memory commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, 0);
         assertEq(commitments.length, 1);
-        uint256 rateCommitment = PoseidonT3.hash([idCommitment, userMessageLimit]);
+        uint256 rateCommitment = PoseidonT3.hash([idCommitment, membershipRateLimit]);
         assertEq(commitments[0], rateCommitment);
     }
 
     function test__ValidPaginationQuery(uint32 idCommitmentsLength) external {
         vm.pauseGasMetering();
-        vm.assume(idCommitmentsLength > 0 && idCommitmentsLength <= 100);
-        uint32 userMessageLimit = w.minRateLimitPerMembership();
-        (, uint256 price) = w.priceCalculator().calculate(userMessageLimit);
+        vm.assume(0 < idCommitmentsLength && idCommitmentsLength <= 100);
+        uint32 membershipRateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
 
-        for (uint256 i = 0; i < idCommitmentsLength; i++) {
+        for (uint256 i = 0; i <= idCommitmentsLength; i++) {
             token.approve(address(w), price);
-            w.register(i + 1, userMessageLimit);
+            w.register(i + 1, membershipRateLimit, noIdCommitmentsToErase);
         }
         vm.resumeGasMetering();
 
-        uint256[] memory commitments = w.getCommitments(0, idCommitmentsLength);
-        assertEq(commitments.length, idCommitmentsLength + 1);
+        uint256[] memory rateCommitments = w.getRateCommitmentsInRangeBoundsInclusive(0, idCommitmentsLength - 1);
+        assertEq(rateCommitments.length, idCommitmentsLength);
         for (uint256 i = 0; i < idCommitmentsLength; i++) {
-            uint256 rateCommitment = PoseidonT3.hash([i + 1, userMessageLimit]);
-            assertEq(commitments[i], rateCommitment);
+            uint256 rateCommitment = PoseidonT3.hash([i + 1, membershipRateLimit]);
+            assertEq(rateCommitments[i], rateCommitment);
         }
     }
 

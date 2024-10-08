@@ -6,7 +6,6 @@ import { LinearPriceCalculator } from "../src/LinearPriceCalculator.sol";
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
 import { LazyIMT } from "@zk-kit/imt.sol/LazyIMT.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 import { BaseScript } from "./Base.s.sol";
 
