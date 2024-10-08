@@ -13,19 +13,19 @@ error InvalidMembershipRateLimit();
 // even after attempting to erase expired memberships
 error CannotExceedMaxTotalRateLimit();
 
-// This membership is not in its grace period
-error CannotExtendActiveMembership(uint256 idCommitment);
+// The membership is not in its grace period (cannot be extended)
+error CannotExtendNonGracePeriodMembership(uint256 idCommitment);
 
-// The sender is not the holder of this membership
+// The sender is not the holder of this membership (cannot extend)
 error NonHolderCannotExtend(uint256 idCommitment);
 
-// The membership is still active
+// The membership is still active (cannot be erased)
 error CannotEraseActiveMembership(uint256 idCommitment);
 
-// The sender is not the holder of this membership
-error NonHolderCannotErase(uint256 idCommitment);
+// The sender is not the holder of this membership (cannot erase)
+error NonHolderCannotEraseGracePeriodMembership(uint256 idCommitment);
 
-// This membership does not exist
+// The membership does not exist
 error MembershipDoesNotExist(uint256 idCommitment);
 
 abstract contract MembershipUpgradeable is Initializable {
@@ -238,7 +238,7 @@ abstract contract MembershipUpgradeable is Initializable {
         MembershipInfo storage membership = memberships[_idCommitment];
 
         if (!_isInPeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration)) {
-            revert CannotExtendActiveMembership(_idCommitment);
+            revert CannotExtendNonGracePeriodMembership(_idCommitment);
         }
 
         if (_sender != membership.holder) revert NonHolderCannotExtend(_idCommitment);
@@ -270,7 +270,7 @@ abstract contract MembershipUpgradeable is Initializable {
         if (!membershipExpired && !membershipIsInGracePeriod) {
             revert CannotEraseActiveMembership(_idCommitment);
         } else if (membershipIsInGracePeriod && !isHolder) {
-            revert NonHolderCannotErase(_idCommitment);
+            revert NonHolderCannotEraseGracePeriodMembership(_idCommitment);
         }
 
         // Move deposit balance from the membership to be erased to holder deposit balance
