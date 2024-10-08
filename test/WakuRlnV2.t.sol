@@ -691,8 +691,7 @@ contract WakuRlnV2Test is Test {
 
         /*| Name                | Type                                                | Slot | Offset | Bytes |
           |---------------------|-----------------------------------------------------|------|--------|-------|
-          | nextFreeIndex | uint32                                              | 256  | 0      | 4     | */
-
+          | nextFreeIndex       | uint32                                              | 206  | 0      | 4     | */
         /*
         Pro tip: to easily find the storage slot of a variable, without having to calculate the storage layout
         based on the variable declaration, set the variable to an easily grepable value like 0xDEADBEEF, and then
@@ -710,7 +709,7 @@ contract WakuRlnV2Test is Test {
         */
 
         // we set nextFreeIndex to 4294967295 (1 << 20) = 0x00100000
-        vm.store(address(w), bytes32(uint256(256)), 0x0000000000000000000000000000000000000000000000000000000000100000);
+        vm.store(address(w), bytes32(uint256(206)), 0x0000000000000000000000000000000000000000000000000000000000100000);
         token.approve(address(w), price);
         vm.expectRevert(bytes("Membership set is full"));
         w.register(1, membershipRateLimit, noIdCommitmentsToErase);
