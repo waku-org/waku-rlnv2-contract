@@ -212,7 +212,7 @@ abstract contract MembershipUpgradeable is Initializable {
 
     /// @dev acquire a membership and transfer the deposit to the contract
     /// Uses the RC20 Permit extension allowing approvals to be made via signatures, as defined in
-    /// https://eips.ethereum.org/EIPS/eip-2612[EIP-2612].
+    /// [EIP-2612](https://eips.ethereum.org/EIPS/eip-2612).
     /// @param _owner The address of the token owner who is giving permission and will own the membership.
     /// @param _deadline The timestamp until when the permit is valid.
     /// @param _v The recovery byte of the signature.

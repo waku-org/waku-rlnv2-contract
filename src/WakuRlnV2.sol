@@ -10,7 +10,6 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 
 import { MembershipUpgradeable } from "./Membership.sol";
 import { IPriceCalculator } from "./IPriceCalculator.sol";
-import { ERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 
 /// A membership with this idCommitment is already registered
 error DuplicateIdCommitment();
@@ -181,7 +180,7 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
 
     /// @notice Register a membership while erasing some expired memberships to reuse their rate limit.
     /// Uses the RC20 Permit extension allowing approvals to be made via signatures, as defined in
-    /// https://eips.ethereum.org/EIPS/eip-2612[EIP-2612].
+    /// [EIP-2612](https://eips.ethereum.org/EIPS/eip-2612).
     /// @param owner The address of the token owner who is giving permission and will own the membership.
     /// @param deadline The timestamp until when the permit is valid.
     /// @param v The recovery byte of the signature.

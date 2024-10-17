@@ -127,7 +127,6 @@ contract WakuRlnV2Test is Test {
         uint256 idCommitment = 2;
         uint32 membershipRateLimit = w.minMembershipRateLimit();
         (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
-        vm.resumeGasMetering();
 
         // Creating an owner for a membership (Alice)
         uint256 alicePrivK = 0xA11CE;
@@ -151,6 +150,8 @@ contract WakuRlnV2Test is Test {
         // Sign the permit hash using the owner's private key
         (uint8 v, bytes32 r, bytes32 s) =
             vm.sign(alicePrivK, ECDSA.toTypedDataHash(token.DOMAIN_SEPARATOR(), permitHash));
+
+        vm.resumeGasMetering();
 
         // Call the function on-chain using the generated signature
         w.registerWithPermit(
