@@ -36,7 +36,13 @@
     "adorno": "pnpm prettier:write && forge fmt && forge snapshot && pnpm gas-report",
     "deploy:sepolia": "./envCheck.sh && FOUNDRY_PROFILE=sepolia forge script --chain sepolia script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
     "deploy:cardona": "export RPC_URL=https://rpc.cardona.zkevm-rpc.com && ./envCheck.sh && FOUNDRY_PROFILE=cardona forge script --chain 2442 script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
-    "deploy:linea_sepolia": "export RPC_URL=https://rpc.sepolia.linea.build && ./envCheck.sh && FOUNDRY_PROFILE=linea_sepolia forge script --chain 59141  script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
-    "deploy:localhost": "./envCheck.sh && forge script script/Deploy.s.sol:Deploy --rpc-url $RPC_URL --broadcast -vv --account $ACCOUNT --sender $ETH_FROM"
+    "deploy:localhost:price_calculator": "./envCheck.sh && forge script script/Deploy.s.sol:DeployPriceCalculator --rpc-url $RPC_URL --broadcast -vv --sender $ETH_FROM --account $ACCOUNT",
+    "deploy:localhost:wakurln_impl_v2": "./envCheck.sh && forge script script/Deploy.s.sol:DeployWakuRlnV2 --rpc-url $RPC_URL --broadcast -vv --sender $ETH_FROM --account $ACCOUNT",
+    "deploy:localhost:proxy": "./envCheck.sh && forge script script/Deploy.s.sol:DeployProxy --rpc-url $RPC_URL --broadcast -vv --sender $ETH_FROM --account $ACCOUNT",
+    "deploy:localhost": "npm run deploy:localhost:price_calculator && npm run deploy:localhost:wakurln_impl_v2 && npm run deploy:localhost:proxy",
+    "deploy:linea_sepolia:price_calculator": "export RPC_URL=https://rpc.sepolia.linea.build && ./envCheck.sh && FOUNDRY_PROFILE=linea_sepolia forge script --chain 59141  script/Deploy.s.sol:DeployPriceCalculator --rpc-url $RPC_URL --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
+    "deploy:linea_sepolia:wakurln_impl_v2": "export RPC_URL=https://rpc.sepolia.linea.build && ./envCheck.sh && FOUNDRY_PROFILE=linea_sepolia forge script --chain 59141  script/Deploy.s.sol:DeployWakuRlnV2 --rpc-url $RPC_URL --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
+    "deploy:linea_sepolia:proxy": "export RPC_URL=https://rpc.sepolia.linea.build && ./envCheck.sh && FOUNDRY_PROFILE=linea_sepolia forge script --chain 59141  script/Deploy.s.sol:DeployProxy --rpc-url $RPC_URL --broadcast --verify -vv --account $ACCOUNT --legacy --sender $ETH_FROM",
+    "deploy:linea_sepolia": "npm run deploy:linea_sepolia:price_calculator && npm run deploy:linea_sepolia:wakurln_impl_v2 && npm run deploy:linea_sepolia:proxy"
   }
 }
