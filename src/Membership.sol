@@ -4,6 +4,7 @@ pragma solidity 0.8.24;
 import { IPriceCalculator } from "./IPriceCalculator.sol";
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import { ERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 
 // The rate limit is outside the expected limits
@@ -208,6 +209,63 @@ abstract contract MembershipUpgradeable is Initializable {
         IERC20(token).safeTransferFrom(_sender, address(this), depositAmount);
     }
 
+    /// @dev acquire a membership and transfer the deposit to the contract
+    /// Uses the RC20 Permit extension allowing approvals to be made via signatures, as defined in
+    /// [EIP-2612](https://eips.ethereum.org/EIPS/eip-2612).
+    /// @param _owner The address of the token owner who is giving permission and will own the membership.
+    /// @param _deadline The timestamp until when the permit is valid.
+    /// @param _v The recovery byte of the signature.
+    /// @param _r Half of the ECDSA signature pair.
+    /// @param _s Half of the ECDSA signature pair.
+    /// @param _idCommitment the idCommitment of the new membership
+    /// @param _rateLimit the membership rate limit
+    /// @return index the index of the new membership in the membership set
+    /// @return indexReused true if the index was reused, false otherwise
+    function _acquireMembershipWithPermit(
+        address _owner,
+        uint256 _deadline,
+        uint8 _v,
+        bytes32 _r,
+        bytes32 _s,
+        uint256 _idCommitment,
+        uint32 _rateLimit
+    )
+        internal
+        returns (uint32 index, bool indexReused)
+    {
+        // Check if the rate limit is valid
+        if (!isValidMembershipRateLimit(_rateLimit)) {
+            revert InvalidMembershipRateLimit();
+        }
+
+        currentTotalRateLimit += _rateLimit;
+
+        // Determine if we exceed the total rate limit
+        if (currentTotalRateLimit > maxTotalRateLimit) {
+            revert CannotExceedMaxTotalRateLimit();
+        }
+
+        (address token, uint256 depositAmount) = priceCalculator.calculate(_rateLimit);
+
+        ERC20Permit(token).permit(_owner, address(this), depositAmount, _deadline, _v, _r, _s);
+
+        // Possibly reuse an index of an erased membership
+        (index, indexReused) = _getFreeIndex();
+
+        memberships[_idCommitment] = MembershipInfo({
+            holder: _owner,
+            activeDuration: activeDurationForNewMemberships,
+            gracePeriodStartTimestamp: block.timestamp + uint256(activeDurationForNewMemberships),
+            gracePeriodDuration: gracePeriodDurationForNewMemberships,
+            token: token,
+            depositAmount: depositAmount,
+            rateLimit: _rateLimit,
+            index: index
+        });
+
+        IERC20(token).safeTransferFrom(_owner, address(this), depositAmount);
+    }
+
     /// @notice Checks if a rate limit is within the allowed bounds
     /// @param rateLimit The rate limit
     /// @return true if the rate limit is within the allowed bounds, false otherwise
@@ -233,7 +291,7 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @dev Extend a grace-period membership
     /// @param _sender the address of the transaction sender
     /// @param _idCommitment the idCommitment of the membership
-    function _extendMembership(address _sender, uint256 _idCommitment) public {
+    function _extendMembership(address _sender, uint256 _idCommitment) internal {
         MembershipInfo storage membership = memberships[_idCommitment];
 
         if (!_isInPeriod(membership.gracePeriodStartTimestamp, membership.gracePeriodDuration)) {
