@@ -20,6 +20,15 @@ error InvalidIdCommitment(uint256 idCommitment);
 /// Invalid pagination query
 error InvalidPaginationQuery(uint256 startIndex, uint256 endIndex);
 
+struct MembershipPermitParams {
+    /// @notice The idCommitment of the new membership
+    uint256 idCommitment;
+    /// @notice The rate limit of the new membership
+    uint32 rateLimit;
+    /// @notice The list of idCommitments of expired memberships to erase
+    uint256[] idCommitmentsToErase;
+}
+
 contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, MembershipUpgradeable {
     /// @notice The Field
     uint256 public constant Q =
@@ -186,29 +195,69 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
     /// @param v The recovery byte of the signature.
     /// @param r Half of the ECDSA signature pair.
     /// @param s Half of the ECDSA signature pair.
-    /// @param idCommitment The idCommitment of the new membership
-    /// @param rateLimit The rate limit of the new membership
-    /// @param idCommitmentsToErase The list of idCommitments of expired memberships to erase
+    /// @param membership Parameters for the new membership
     function registerWithPermit(
         address owner,
         uint256 deadline,
         uint8 v,
         bytes32 r,
         bytes32 s,
-        uint256 idCommitment,
-        uint32 rateLimit,
-        uint256[] calldata idCommitmentsToErase
+        MembershipPermitParams calldata membership
     )
         external
-        onlyValidIdCommitment(idCommitment)
-        noDuplicateMembership(idCommitment)
         membershipSetNotFull
     {
+        uint256 idCommitment = membership.idCommitment;
+        uint32 rateLimit = membership.rateLimit;
+        uint256[] calldata idCommitmentsToErase = membership.idCommitmentsToErase;
+
+        if (!isValidIdCommitment(idCommitment)) revert InvalidIdCommitment(idCommitment);
+        require(!isInMembershipSet(idCommitment), "Duplicate idCommitment: membership already exists");
+
         // erase memberships without overwriting membership set data to zero (save gas)
         _eraseMemberships(idCommitmentsToErase, false);
 
         (uint32 index, bool indexReused) =
             _acquireMembershipWithPermit(owner, deadline, v, r, s, idCommitment, rateLimit);
+
+        _upsertInTree(idCommitment, rateLimit, index, indexReused);
+
+        emit MembershipRegistered(idCommitment, rateLimit, index);
+    }
+
+    /// @notice Register a membership while erasing some expired memberships to reuse their rate limit.
+    /// Uses the DAI Permit
+    /// @param owner The address of the token owner who is giving permission and will own the membership.
+    /// @param deadline The timestamp until when the permit is valid.
+    /// @param nonce The nonce used for the permission
+    /// @param v The recovery byte of the signature.
+    /// @param r Half of the ECDSA signature pair.
+    /// @param s Half of the ECDSA signature pair.
+    /// @param membership Parameters for the new membership
+    function registerWithDAIPermit(
+        address owner,
+        uint256 deadline,
+        uint256 nonce,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        MembershipPermitParams calldata membership
+    )
+        external
+        membershipSetNotFull
+    {
+        uint256 idCommitment = membership.idCommitment;
+        uint32 rateLimit = membership.rateLimit;
+        uint256[] calldata idCommitmentsToErase = membership.idCommitmentsToErase;
+
+        if (!isValidIdCommitment(idCommitment)) revert InvalidIdCommitment(idCommitment);
+        require(!isInMembershipSet(idCommitment), "Duplicate idCommitment: membership already exists");
+
+        // erase memberships without overwriting membership set data to zero (save gas)
+        _eraseMemberships(idCommitmentsToErase, false);
+
+        (uint32 index, bool indexReused) =
+            _acquireMembershipWithDAIPermit(owner, deadline, nonce, v, r, s, idCommitment, rateLimit);
 
         _upsertInTree(idCommitment, rateLimit, index, indexReused);
 

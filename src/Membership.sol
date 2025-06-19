@@ -2,6 +2,7 @@
 pragma solidity 0.8.24;
 
 import { IPriceCalculator } from "./IPriceCalculator.sol";
+import { IDAIPermit } from "./IDAIPermit.sol";
 import { IERC20 } from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
@@ -248,6 +249,64 @@ abstract contract MembershipUpgradeable is Initializable {
         (address token, uint256 depositAmount) = priceCalculator.calculate(_rateLimit);
 
         ERC20Permit(token).permit(_owner, address(this), depositAmount, _deadline, _v, _r, _s);
+
+        // Possibly reuse an index of an erased membership
+        (index, indexReused) = _getFreeIndex();
+
+        memberships[_idCommitment] = MembershipInfo({
+            holder: _owner,
+            activeDuration: activeDurationForNewMemberships,
+            gracePeriodStartTimestamp: block.timestamp + uint256(activeDurationForNewMemberships),
+            gracePeriodDuration: gracePeriodDurationForNewMemberships,
+            token: token,
+            depositAmount: depositAmount,
+            rateLimit: _rateLimit,
+            index: index
+        });
+
+        IERC20(token).safeTransferFrom(_owner, address(this), depositAmount);
+    }
+
+    /// @dev acquire a membership and transfer the deposit to the contract
+    /// Uses DAI permit extension allowing approvals to be made via signatures
+    /// @param _owner The address of the token owner who is giving permission and will own the membership.
+    /// @param _deadline The timestamp until when the permit is valid.
+    /// @param _nonce The nonce used for the permission
+    /// @param _v The recovery byte of the signature.
+    /// @param _r Half of the ECDSA signature pair.
+    /// @param _s Half of the ECDSA signature pair.
+    /// @param _idCommitment the idCommitment of the new membership
+    /// @param _rateLimit the membership rate limit
+    /// @return index the index of the new membership in the membership set
+    /// @return indexReused true if the index was reused, false otherwise
+    function _acquireMembershipWithDAIPermit(
+        address _owner,
+        uint256 _deadline,
+        uint256 _nonce,
+        uint8 _v,
+        bytes32 _r,
+        bytes32 _s,
+        uint256 _idCommitment,
+        uint32 _rateLimit
+    )
+        internal
+        returns (uint32 index, bool indexReused)
+    {
+        // Check if the rate limit is valid
+        if (!isValidMembershipRateLimit(_rateLimit)) {
+            revert InvalidMembershipRateLimit();
+        }
+
+        currentTotalRateLimit += _rateLimit;
+
+        // Determine if we exceed the total rate limit
+        if (currentTotalRateLimit > maxTotalRateLimit) {
+            revert CannotExceedMaxTotalRateLimit();
+        }
+
+        (address token, uint256 depositAmount) = priceCalculator.calculate(_rateLimit);
+
+        IDAIPermit(token).permit(_owner, address(this), _nonce, _deadline, true, _v, _r, _s);
 
         // Possibly reuse an index of an erased membership
         (index, indexReused) = _getFreeIndex();
