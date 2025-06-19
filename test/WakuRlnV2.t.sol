@@ -124,9 +124,14 @@ contract WakuRlnV2Test is Test {
 
     function test__ValidRegistrationWithPermit() external {
         vm.pauseGasMetering();
-        uint256 idCommitment = 2;
-        uint32 membershipRateLimit = w.minMembershipRateLimit();
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+
+        MembershipPermitParams memory membership = MembershipPermitParams({
+            idCommitment: 2,
+            rateLimit: w.minMembershipRateLimit(),
+            idCommitmentsToErase: noIdCommitmentsToErase
+        });
+
+        (, uint256 price) = w.priceCalculator().calculate(membership.rateLimit);
 
         // Creating an owner for a membership (Alice)
         uint256 alicePrivK = 0xA11CE;
@@ -154,12 +159,55 @@ contract WakuRlnV2Test is Test {
         vm.resumeGasMetering();
 
         // Call the function on-chain using the generated signature
-        w.registerWithPermit(
-            aliceAddr, block.timestamp + 1 hours, v, r, s, idCommitment, membershipRateLimit, noIdCommitmentsToErase
+        w.registerWithPermit(aliceAddr, block.timestamp + 1 hours, v, r, s, membership);
+
+        (,,,, uint32 fetchedMembershipRateLimit,, address holder,) = w.memberships(membership.idCommitment);
+        assertEq(fetchedMembershipRateLimit, membership.rateLimit);
+        assertEq(holder, aliceAddr);
+        assertEq(token.balanceOf(address(w)), price);
+    }
+
+    function test__ValidRegistrationWithDAIPermit() external {
+        vm.pauseGasMetering();
+
+        MembershipPermitParams memory membership = MembershipPermitParams({
+            idCommitment: 2,
+            rateLimit: w.minMembershipRateLimit(),
+            idCommitmentsToErase: noIdCommitmentsToErase
+        });
+
+        (, uint256 price) = w.priceCalculator().calculate(membership.rateLimit);
+
+        // Creating an owner for a membership (Alice)
+        uint256 alicePrivK = 0xA11CE;
+        address aliceAddr = vm.addr(alicePrivK);
+
+        // Minting some tokens so Alice can register a membership
+        token.mint(aliceAddr, price);
+
+        // Sign the permit hash using the owner's private key
+        bytes32 permitHash = keccak256(
+            abi.encode(
+                keccak256("Permit(address holder,address spender,uint256 nonce,uint256 expiry,bool allowed)"),
+                aliceAddr, // Owner of the membership
+                address(w), // Spender (The rln proxy contract)
+                token.nonces(aliceAddr),
+                block.timestamp + 1 hours,
+                true
+            )
         );
 
-        (,,,, uint32 fetchedMembershipRateLimit,, address holder,) = w.memberships(idCommitment);
-        assertEq(fetchedMembershipRateLimit, membershipRateLimit);
+        // Sign the permit hash using the owner's private key
+        (uint8 v, bytes32 r, bytes32 s) =
+            vm.sign(alicePrivK, ECDSA.toTypedDataHash(token.DAI_DOMAIN_SEPARATOR(), permitHash));
+
+        vm.resumeGasMetering();
+
+        // Call the function on-chain using the generated signature
+        w.registerWithDAIPermit(aliceAddr, block.timestamp + 1 hours, token.nonces(aliceAddr), v, r, s, membership);
+
+        (,,,, uint32 fetchedMembershipRateLimit,, address holder,) = w.memberships(membership.idCommitment);
+        assertEq(fetchedMembershipRateLimit, membership.rateLimit);
         assertEq(holder, aliceAddr);
         assertEq(token.balanceOf(address(w)), price);
     }
