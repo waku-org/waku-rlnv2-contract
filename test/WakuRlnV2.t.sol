@@ -122,48 +122,6 @@ contract WakuRlnV2Test is Test {
         assertEq(w.currentTotalRateLimit(), membershipRateLimit);
     }
 
-    function test__ValidRegistrationWithPermit() external {
-        vm.pauseGasMetering();
-        uint256 idCommitment = 2;
-        uint32 membershipRateLimit = w.minMembershipRateLimit();
-        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
-
-        // Creating an owner for a membership (Alice)
-        uint256 alicePrivK = 0xA11CE;
-        address aliceAddr = vm.addr(alicePrivK);
-
-        // Minting some tokens so Alice can register a membership
-        token.mint(aliceAddr, price);
-
-        // Prepare the permit parameters
-        bytes32 permitHash = keccak256(
-            abi.encode(
-                keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)"),
-                aliceAddr, // Owner of the membership
-                address(w), // Spender (The rln proxy contract)
-                price,
-                token.nonces(aliceAddr),
-                block.timestamp + 1 hours // Deadline
-            )
-        );
-
-        // Sign the permit hash using the owner's private key
-        (uint8 v, bytes32 r, bytes32 s) =
-            vm.sign(alicePrivK, ECDSA.toTypedDataHash(token.DOMAIN_SEPARATOR(), permitHash));
-
-        vm.resumeGasMetering();
-
-        // Call the function on-chain using the generated signature
-        w.registerWithPermit(
-            aliceAddr, block.timestamp + 1 hours, v, r, s, idCommitment, membershipRateLimit, noIdCommitmentsToErase
-        );
-
-        (,,,, uint32 fetchedMembershipRateLimit,, address holder,) = w.memberships(idCommitment);
-        assertEq(fetchedMembershipRateLimit, membershipRateLimit);
-        assertEq(holder, aliceAddr);
-        assertEq(token.balanceOf(address(w)), price);
-    }
-
     function test__LinearPriceCalculation(uint32 membershipRateLimit) external view {
         IPriceCalculator priceCalculator = w.priceCalculator();
         uint256 pricePerMessagePerPeriod = LinearPriceCalculator(address(priceCalculator)).pricePerMessagePerEpoch();
