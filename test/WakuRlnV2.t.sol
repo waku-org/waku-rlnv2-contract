@@ -7,7 +7,7 @@ import "../src/WakuRlnV2.sol"; // solhint-disable-line
 import "../src/Membership.sol"; // solhint-disable-line
 import { IPriceCalculator } from "../src/IPriceCalculator.sol";
 import { LinearPriceCalculator } from "../src/LinearPriceCalculator.sol";
-import { TestToken } from "./TestToken.sol";
+import { TestStableToken } from "./TestStableToken.sol";
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -16,21 +16,21 @@ import "forge-std/console.sol";
 
 contract WakuRlnV2Test is Test {
     WakuRlnV2 internal w;
-    TestToken internal token;
+    TestStableToken internal token;
 
     address internal deployer;
 
     uint256[] internal noIdCommitmentsToErase = new uint256[](0);
 
     function setUp() public virtual {
-        token = new TestToken();
+        token = new TestStableToken();
         IPriceCalculator priceCalculator = (new DeployPriceCalculator()).deploy(address(token));
         WakuRlnV2 wakuRlnV2 = (new DeployWakuRlnV2()).deploy();
         ERC1967Proxy proxy = (new DeployProxy()).deploy(address(priceCalculator), address(wakuRlnV2));
 
         w = WakuRlnV2(address(proxy));
 
-        // Minting a large number of tokens to not have to worry about
+        // TestStableTokening a large number of tokens to not have to worry about
         // Not having enough balance
         token.mint(address(this), 100_000_000 ether);
     }
