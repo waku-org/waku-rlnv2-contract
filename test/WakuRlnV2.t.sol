@@ -766,7 +766,7 @@ contract WakuRlnV2Test is Test {
     function test__TestStableToken__OnlyOwnerCanMint() external {
         address nonOwner = vm.addr(1);
         uint256 mintAmount = 1000 ether;
-        
+
         vm.prank(nonOwner);
         vm.expectRevert("Only owner can mint");
         token.mint(nonOwner, mintAmount);
@@ -777,17 +777,17 @@ contract WakuRlnV2Test is Test {
         uint256 idCommitment = 3;
         uint32 membershipRateLimit = w.minMembershipRateLimit();
         (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
-        
+
         // Owner (test contract) mints tokens to recipient
         token.mint(recipient, price);
         assertEq(token.balanceOf(recipient), price);
-        
+
         // Recipient uses tokens to register
         vm.startPrank(recipient);
         token.approve(address(w), price);
         w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
         vm.stopPrank();
-        
+
         // Verify registration succeeded
         assertTrue(w.isInMembershipSet(idCommitment));
         (,,,, uint32 fetchedMembershipRateLimit, uint32 index, address holder,) = w.memberships(idCommitment);
