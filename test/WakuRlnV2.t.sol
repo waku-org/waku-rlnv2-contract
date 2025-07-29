@@ -768,7 +768,7 @@ contract WakuRlnV2Test is Test {
         uint256 mintAmount = 1000 ether;
 
         vm.prank(nonOwner);
-        vm.expectRevert("Only owner can mint");
+        vm.expectRevert("Ownable: caller is not the owner");
         token.mint(nonOwner, mintAmount);
     }
 
