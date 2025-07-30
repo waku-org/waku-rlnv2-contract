@@ -7,8 +7,7 @@ import { ERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/ERC2
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
 contract TestStableToken is ERC20, ERC20Permit, Ownable {
-    constructor() ERC20("TestStableToken", "TST") ERC20Permit("TestStableToken") Ownable() {
-    }
+    constructor() ERC20("TestStableToken", "TST") ERC20Permit("TestStableToken") Ownable() { }
 
     function mint(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);
