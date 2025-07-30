@@ -7,7 +7,7 @@ import "../src/WakuRlnV2.sol"; // solhint-disable-line
 import "../src/Membership.sol"; // solhint-disable-line
 import { IPriceCalculator } from "../src/IPriceCalculator.sol";
 import { LinearPriceCalculator } from "../src/LinearPriceCalculator.sol";
-import { TestToken } from "./TestToken.sol";
+import { TestStableToken } from "./TestStableToken.sol";
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -16,21 +16,21 @@ import "forge-std/console.sol";
 
 contract WakuRlnV2Test is Test {
     WakuRlnV2 internal w;
-    TestToken internal token;
+    TestStableToken internal token;
 
     address internal deployer;
 
     uint256[] internal noIdCommitmentsToErase = new uint256[](0);
 
     function setUp() public virtual {
-        token = new TestToken();
+        token = new TestStableToken();
         IPriceCalculator priceCalculator = (new DeployPriceCalculator()).deploy(address(token));
         WakuRlnV2 wakuRlnV2 = (new DeployWakuRlnV2()).deploy();
         ERC1967Proxy proxy = (new DeployProxy()).deploy(address(priceCalculator), address(wakuRlnV2));
 
         w = WakuRlnV2(address(proxy));
 
-        // Minting a large number of tokens to not have to worry about
+        // TestStableTokening a large number of tokens to not have to worry about
         // Not having enough balance
         token.mint(address(this), 100_000_000 ether);
     }
@@ -761,6 +761,39 @@ contract WakuRlnV2Test is Test {
             uint256 rateCommitment = PoseidonT3.hash([i + 1, membershipRateLimit]);
             assertEq(rateCommitments[i], rateCommitment);
         }
+    }
+
+    function test__TestStableToken__OnlyOwnerCanMint() external {
+        address nonOwner = vm.addr(1);
+        uint256 mintAmount = 1000 ether;
+
+        vm.prank(nonOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        token.mint(nonOwner, mintAmount);
+    }
+
+    function test__TestStableToken__OwnerMintsTransfersAndRegisters() external {
+        address recipient = vm.addr(2);
+        uint256 idCommitment = 3;
+        uint32 membershipRateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+
+        // Owner (test contract) mints tokens to recipient
+        token.mint(recipient, price);
+        assertEq(token.balanceOf(recipient), price);
+
+        // Recipient uses tokens to register
+        vm.startPrank(recipient);
+        token.approve(address(w), price);
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
+        vm.stopPrank();
+
+        // Verify registration succeeded
+        assertTrue(w.isInMembershipSet(idCommitment));
+        (,,,, uint32 fetchedMembershipRateLimit, uint32 index, address holder,) = w.memberships(idCommitment);
+        assertEq(fetchedMembershipRateLimit, membershipRateLimit);
+        assertEq(holder, recipient);
+        assertEq(index, 0);
     }
 
     function test__Upgrade() external {
