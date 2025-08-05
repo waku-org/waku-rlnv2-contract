@@ -6,31 +6,31 @@ import { ERC20 } from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import { ERC20Permit } from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Permit.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
-error AccountNotApproved();
-error AccountAlreadyApproved();
-error AccountNotInList();
+error AccountNotMinter();
+error AccountAlreadyMinter();
+error AccountNotInMinterList();
 
 contract TestStableToken is ERC20, ERC20Permit, Ownable {
-    mapping(address => bool) public approvedAccounts;
+    mapping(address => bool) public minterRole;
 
-    modifier onlyOwnerOrApproved() {
-        if (msg.sender != owner() && !approvedAccounts[msg.sender]) revert AccountNotApproved();
+    modifier onlyOwnerOrMinter() {
+        if (msg.sender != owner() && !minterRole[msg.sender]) revert AccountNotMinter();
         _;
     }
 
     constructor() ERC20("TestStableToken", "TST") ERC20Permit("TestStableToken") Ownable() { }
 
-    function addApprovedAccount(address account) external onlyOwner {
-        if (approvedAccounts[account]) revert AccountAlreadyApproved();
-        approvedAccounts[account] = true;
+    function addMinterRole(address account) external onlyOwner {
+        if (minterRole[account]) revert AccountAlreadyMinter();
+        minterRole[account] = true;
     }
 
-    function removeApprovedAccount(address account) external onlyOwner {
-        if (!approvedAccounts[account]) revert AccountNotInList();
-        approvedAccounts[account] = false;
+    function removeMinterRole(address account) external onlyOwner {
+        if (!minterRole[account]) revert AccountNotInMinterList();
+        minterRole[account] = false;
     }
 
-    function mint(address to, uint256 amount) external onlyOwnerOrApproved {
+    function mint(address to, uint256 amount) external onlyOwnerOrMinter {
         _mint(to, amount);
     }
 }
