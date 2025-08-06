@@ -20,20 +20,20 @@ contract TestStableTokenTest is Test {
     }
 
     function test__OwnerCanAddMinterRole() external {
-        assertFalse(token.minterRole(user1));
+        assertFalse(token.isMinter(user1));
 
-        token.addMinterRole(user1);
+        token.addMinter(user1);
 
-        assertTrue(token.minterRole(user1));
+        assertTrue(token.isMinter(user1));
     }
 
     function test__OwnerCanRemoveMinterRole() external {
-        token.addMinterRole(user1);
-        assertTrue(token.minterRole(user1));
+        token.addMinter(user1);
+        assertTrue(token.isMinter(user1));
 
-        token.removeMinterRole(user1);
+        token.removeMinter(user1);
 
-        assertFalse(token.minterRole(user1));
+        assertFalse(token.isMinter(user1));
     }
 
     function test__OwnerCanMintWithoutMinterRole() external {
@@ -47,32 +47,32 @@ contract TestStableTokenTest is Test {
     function test__NonOwnerCannotAddMinterRole() external {
         vm.prank(user1);
         vm.expectRevert("Ownable: caller is not the owner");
-        token.addMinterRole(user1);
+        token.addMinter(user1);
     }
 
     function test__NonOwnerCannotRemoveMinterRole() external {
-        token.addMinterRole(user1);
+        token.addMinter(user1);
 
         vm.prank(user1);
         vm.expectRevert("Ownable: caller is not the owner");
-        token.removeMinterRole(user1);
+        token.removeMinter(user1);
     }
 
     function test__CannotAddAlreadyMinterRole() external {
-        token.addMinterRole(user1);
+        token.addMinter(user1);
 
         vm.expectRevert(abi.encodeWithSelector(AccountAlreadyMinter.selector));
-        token.addMinterRole(user1);
+        token.addMinter(user1);
     }
 
     function test__CannotRemoveNonMinterRole() external {
         vm.expectRevert(abi.encodeWithSelector(AccountNotInMinterList.selector));
-        token.removeMinterRole(user1);
+        token.removeMinter(user1);
     }
 
     function test__MinterRoleCanMint() external {
         uint256 mintAmount = 1000 ether;
-        token.addMinterRole(user1);
+        token.addMinter(user1);
 
         vm.prank(user1);
         token.mint(user2, mintAmount);
@@ -90,8 +90,8 @@ contract TestStableTokenTest is Test {
 
     function test__MultipleMinterRolesCanMint() external {
         uint256 mintAmount = 500 ether;
-        token.addMinterRole(user1);
-        token.addMinterRole(user2);
+        token.addMinter(user1);
+        token.addMinter(user2);
 
         vm.prank(user1);
         token.mint(owner, mintAmount);
@@ -104,8 +104,8 @@ contract TestStableTokenTest is Test {
 
     function test__RemovedMinterRoleCannotMint() external {
         uint256 mintAmount = 1000 ether;
-        token.addMinterRole(user1);
-        token.removeMinterRole(user1);
+        token.addMinter(user1);
+        token.removeMinter(user1);
 
         vm.prank(user1);
         vm.expectRevert(abi.encodeWithSelector(AccountNotMinter.selector));
@@ -116,30 +116,30 @@ contract TestStableTokenTest is Test {
         uint256 mintAmount = 500 ether;
 
         // Owner is not in minter role but should still be able to mint
-        assertFalse(token.minterRole(address(this)));
+        assertFalse(token.isMinter(address(this)));
         token.mint(user1, mintAmount);
         assertEq(token.balanceOf(user1), mintAmount);
     }
 
     function test__CheckMinterRoleMapping() external {
-        assertFalse(token.minterRole(user1));
-        assertFalse(token.minterRole(user2));
+        assertFalse(token.isMinter(user1));
+        assertFalse(token.isMinter(user2));
 
-        token.addMinterRole(user1);
-        assertTrue(token.minterRole(user1));
-        assertFalse(token.minterRole(user2));
+        token.addMinter(user1);
+        assertTrue(token.isMinter(user1));
+        assertFalse(token.isMinter(user2));
 
-        token.addMinterRole(user2);
-        assertTrue(token.minterRole(user1));
-        assertTrue(token.minterRole(user2));
+        token.addMinter(user2);
+        assertTrue(token.isMinter(user1));
+        assertTrue(token.isMinter(user2));
 
-        token.removeMinterRole(user1);
-        assertFalse(token.minterRole(user1));
-        assertTrue(token.minterRole(user2));
+        token.removeMinter(user1);
+        assertFalse(token.isMinter(user1));
+        assertTrue(token.isMinter(user2));
     }
 
     function test__ERC20BasicFunctionality() external {
-        token.addMinterRole(user1);
+        token.addMinter(user1);
         uint256 mintAmount = 1000 ether;
 
         vm.prank(user1);
@@ -154,4 +154,23 @@ contract TestStableTokenTest is Test {
         assertEq(token.balanceOf(user2), 800 ether);
         assertEq(token.balanceOf(owner), 200 ether);
     }
+
+    function test__MinterAddedEventEmitted() external {
+        vm.expectEmit(true, true, false, false);
+        emit MinterAdded(user1);
+        
+        token.addMinter(user1);
+    }
+
+    function test__MinterRemovedEventEmitted() external {
+        token.addMinter(user1);
+        
+        vm.expectEmit(true, true, false, false);
+        emit MinterRemoved(user1);
+        
+        token.removeMinter(user1);
+    }
+
+    event MinterAdded(address indexed account);
+    event MinterRemoved(address indexed account);
 }

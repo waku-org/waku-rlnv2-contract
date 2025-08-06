@@ -11,23 +11,28 @@ error AccountAlreadyMinter();
 error AccountNotInMinterList();
 
 contract TestStableToken is ERC20, ERC20Permit, Ownable {
-    mapping(address => bool) public minterRole;
+    mapping(address => bool) public isMinter;
+
+    event MinterAdded(address indexed account);
+    event MinterRemoved(address indexed account);
 
     modifier onlyOwnerOrMinter() {
-        if (msg.sender != owner() && !minterRole[msg.sender]) revert AccountNotMinter();
+        if (msg.sender != owner() && !isMinter[msg.sender]) revert AccountNotMinter();
         _;
     }
 
     constructor() ERC20("TestStableToken", "TST") ERC20Permit("TestStableToken") Ownable() { }
 
-    function addMinterRole(address account) external onlyOwner {
-        if (minterRole[account]) revert AccountAlreadyMinter();
-        minterRole[account] = true;
+    function addMinter(address account) external onlyOwner {
+        if (isMinter[account]) revert AccountAlreadyMinter();
+        isMinter[account] = true;
+        emit MinterAdded(account);
     }
 
-    function removeMinterRole(address account) external onlyOwner {
-        if (!minterRole[account]) revert AccountNotInMinterList();
-        minterRole[account] = false;
+    function removeMinter(address account) external onlyOwner {
+        if (!isMinter[account]) revert AccountNotInMinterList();
+        isMinter[account] = false;
+        emit MinterRemoved(account);
     }
 
     function mint(address to, uint256 amount) external onlyOwnerOrMinter {
