@@ -158,16 +158,16 @@ contract TestStableTokenTest is Test {
     function test__MinterAddedEventEmitted() external {
         vm.expectEmit(true, true, false, false);
         emit MinterAdded(user1);
-        
+
         token.addMinter(user1);
     }
 
     function test__MinterRemovedEventEmitted() external {
         token.addMinter(user1);
-        
+
         vm.expectEmit(true, true, false, false);
         emit MinterRemoved(user1);
-        
+
         token.removeMinter(user1);
     }
 
