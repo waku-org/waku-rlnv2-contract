@@ -814,4 +814,21 @@ contract WakuRlnV2Test is Test {
         );
         assertEq(fetchedImpl, newImpl);
     }
+
+    function test__ErasingNonExistentMembership() external {
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 999; // Non-existent
+        assertFalse(w.isInMembershipSet(999), "ID should not exist");
+        uint256 initialRoot = w.root();
+        uint256 initialNextFreeIndex = w.nextFreeIndex();
+
+        vm.expectRevert(abi.encodeWithSelector(MembershipDoesNotExist.selector, 999));
+        w.eraseMemberships(ids);
+
+        assertEq(w.root(), initialRoot, "Merkle root should not change");
+        assertEq(w.nextFreeIndex(), initialNextFreeIndex, "Next free index should not change");
+    }
+
 }
+
+
