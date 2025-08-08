@@ -883,4 +883,54 @@ contract WakuRlnV2Test is Test {
         vm.expectRevert(abi.encodeWithSelector(CannotExtendNonGracePeriodMembership.selector, idCommitment));
         w.extendMemberships(ids);
     }
+
+    function test__MaxTotalRateLimitEdgeCases() external {
+        vm.startPrank(w.owner());
+        w.setMinMembershipRateLimit(1); // Ensure minMembershipRateLimit <= 10
+        w.setMaxMembershipRateLimit(10); // Ensure maxMembershipRateLimit <= 100
+        w.setMaxTotalRateLimit(100);
+        vm.stopPrank();
+
+        uint32 minRateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(minRateLimit);
+
+        // Register until just below max
+        for (uint32 i = 1; i <= 99; i++) {
+            token.approve(address(w), price);
+            w.register(i, minRateLimit, noIdCommitmentsToErase);
+        }
+        assertEq(w.currentTotalRateLimit(), 99);
+
+        // Register to reach max
+        token.approve(address(w), price);
+        w.register(100, minRateLimit, noIdCommitmentsToErase);
+        assertEq(w.currentTotalRateLimit(), 100);
+
+        // Attempt to exceed
+        token.approve(address(w), price);
+        vm.expectRevert(CannotExceedMaxTotalRateLimit.selector);
+        w.register(101, minRateLimit, noIdCommitmentsToErase);
+
+        // Destructure memberships to get gracePeriodStartTimestamp and gracePeriodDuration
+        (
+            , // depositAmount
+            , // activeDuration
+            uint256 graceStart,
+            uint32 gracePeriodDuration,
+            , // rateLimit
+            , // index
+            , // holder
+                // token
+        ) = w.memberships(100);
+        vm.warp(graceStart + gracePeriodDuration + 1); // Expire one
+
+        uint256[] memory toErase = new uint256[](1);
+        toErase[0] = 100;
+        w.eraseMemberships(toErase);
+        assertEq(w.currentTotalRateLimit(), 99);
+
+        token.approve(address(w), price);
+        w.register(101, minRateLimit, noIdCommitmentsToErase);
+        assertEq(w.currentTotalRateLimit(), 100);
+    }
 }
