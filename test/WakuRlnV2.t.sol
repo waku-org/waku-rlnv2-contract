@@ -829,6 +829,58 @@ contract WakuRlnV2Test is Test {
         assertEq(w.nextFreeIndex(), initialNextFreeIndex, "Next free index should not change");
     }
 
+    function test__GracePeriodExtensionEdgeCases() external {
+        uint256 idCommitment = 1;
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        token.approve(address(w), price);
+        w.register(idCommitment, rateLimit, noIdCommitmentsToErase);
+
+        // Destructure the memberships mapping tuple, skipping unused fields
+        (
+            , // depositAmount
+            uint32 activeDuration,
+            uint256 gracePeriodStart,
+            uint32 gracePeriodDuration,
+            uint32 rateLimitFetched,
+            uint32 indexFetched,
+            address holderFetched,
+            // tokenFetched
+        ) = w.memberships(idCommitment);
+        assertEq(rateLimitFetched, rateLimit);
+        assertEq(holderFetched, address(this));
+        assertEq(indexFetched, 0);
+
+        // Before grace period (still active)
+        vm.warp(gracePeriodStart - 1);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = idCommitment;
+        vm.expectRevert(abi.encodeWithSelector(CannotExtendNonGracePeriodMembership.selector, idCommitment));
+        w.extendMemberships(ids);
+
+        // At start of grace period
+        vm.warp(gracePeriodStart);
+        assertTrue(w.isInGracePeriod(idCommitment));
+        vm.expectEmit(true, true, true, true);
+        emit MembershipUpgradeable.MembershipExtended(
+            idCommitment, rateLimit, 0, gracePeriodStart + gracePeriodDuration + activeDuration
+        );
+        w.extendMemberships(ids);
+
+        // Verify updated grace period start
+        (,, uint256 newGracePeriodStart,,,,,) = w.memberships(idCommitment);
+        assertEq(newGracePeriodStart, gracePeriodStart + gracePeriodDuration + activeDuration);
+
+        // Non-holder attempt
+        vm.warp(newGracePeriodStart);
+        vm.prank(vm.addr(1));
+        vm.expectRevert(abi.encodeWithSelector(NonHolderCannotExtend.selector, idCommitment));
+        w.extendMemberships(ids);
+
+        // After grace period (expired)
+        vm.warp(newGracePeriodStart + gracePeriodDuration + 1);
+        vm.expectRevert(abi.encodeWithSelector(CannotExtendNonGracePeriodMembership.selector, idCommitment));
+        w.extendMemberships(ids);
+    }
 }
-
-
