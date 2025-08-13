@@ -25,17 +25,12 @@ contract DeployTokenWithProxy is BaseScript {
 }
 
 contract UpdateTokenImplementation is BaseScript {
-    function run(address proxyAddress, address proxyAdminAddress) public broadcast returns (address newImplementation) {
-        // Deploy new implementation
-        newImplementation = address(new TestStableToken());
-        
-        // Upgrade via ProxyAdmin
+    function run(address proxyAddress, address proxyAdminAddress, address newImplementation) public broadcast {
+        // Upgrade via ProxyAdmin using the provided implementation address
         ProxyAdmin(proxyAdminAddress).upgradeAndCall(
             ITransparentUpgradeableProxy(proxyAddress),
             newImplementation,
             ""
         );
-        
-        return newImplementation;
     }
 }
