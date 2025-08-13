@@ -3,37 +3,21 @@ pragma solidity >=0.8.19 <0.9.0;
 
 import { BaseScript } from "./Base.s.sol";
 import { TestStableToken } from "../test/TestStableToken.sol";
-import { 
-    TransparentUpgradeableProxy, 
-    ITransparentUpgradeableProxy 
-} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
-import { ProxyAdmin } from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract DeployTokenWithProxy is BaseScript {
-    function run() public broadcast returns (address proxy, address implementation, address admin) {
-        // Deploy the initial implementation
-        implementation = address(new TestStableToken());
-        
-        // Deploy proxy admin
-        admin = address(new ProxyAdmin());
-        
-        // Encode the transferOwnership call as initialization data
-        bytes memory initData = abi.encodeWithSignature("transferOwnership(address)", broadcaster);
-        
-        // Deploy the proxy with initialization data to set ownership
-        proxy = address(new TransparentUpgradeableProxy(implementation, admin, initData));
-        
-        return (proxy, implementation, admin);
+    function run() public broadcast returns (address) {
+        return address(deploy());
     }
-}
 
-contract UpdateTokenImplementation is BaseScript {
-    function run(address proxyAddress, address proxyAdminAddress, address newImplementation) public broadcast {
-        // Upgrade via ProxyAdmin using the provided implementation address
-        ProxyAdmin(proxyAdminAddress).upgradeAndCall(
-            ITransparentUpgradeableProxy(proxyAddress),
-            newImplementation,
-            ""
-        );
+    function deploy() public returns (ERC1967Proxy) {
+        // Deploy the initial implementation
+        address implementation = address(new TestStableToken());
+        
+        // Encode the initialize call
+        bytes memory data = abi.encodeCall(TestStableToken.initialize, ());
+        
+        // Deploy the proxy with initialization data
+        return new ERC1967Proxy(implementation, data);
     }
 }

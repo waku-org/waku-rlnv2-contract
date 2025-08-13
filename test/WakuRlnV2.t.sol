@@ -23,14 +23,19 @@ contract WakuRlnV2Test is Test {
     uint256[] internal noIdCommitmentsToErase = new uint256[](0);
 
     function setUp() public virtual {
-        token = new TestStableToken();
+        // Deploy TestStableToken through proxy with initialization
+        TestStableToken implementation = new TestStableToken();
+        bytes memory data = abi.encodeCall(TestStableToken.initialize, ());
+        ERC1967Proxy tokenProxy = new ERC1967Proxy(address(implementation), data);
+        token = TestStableToken(address(tokenProxy));
+        
         IPriceCalculator priceCalculator = (new DeployPriceCalculator()).deploy(address(token));
         WakuRlnV2 wakuRlnV2 = (new DeployWakuRlnV2()).deploy();
         ERC1967Proxy proxy = (new DeployProxy()).deploy(address(priceCalculator), address(wakuRlnV2));
 
         w = WakuRlnV2(address(proxy));
 
-        // TestStableTokening a large number of tokens to not have to worry about
+        // Minting a large number of tokens to not have to worry about
         // Not having enough balance
         token.mint(address(this), 100_000_000 ether);
     }
