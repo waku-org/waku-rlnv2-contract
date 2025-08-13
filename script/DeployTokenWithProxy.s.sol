@@ -17,11 +17,11 @@ contract DeployTokenWithProxy is BaseScript {
         // Deploy proxy admin
         admin = address(new ProxyAdmin());
         
-        // Deploy the proxy with empty initialization data
-        proxy = address(new TransparentUpgradeableProxy(implementation, admin, ""));
+        // Encode the transferOwnership call as initialization data
+        bytes memory initData = abi.encodeWithSignature("transferOwnership(address)", broadcaster);
         
-        // Transfer ownership to the broadcaster (deployer)
-        TestStableToken(proxy).transferOwnership(broadcaster);
+        // Deploy the proxy with initialization data to set ownership
+        proxy = address(new TransparentUpgradeableProxy(implementation, admin, initData));
         
         return (proxy, implementation, admin);
     }
