@@ -15,14 +15,14 @@ contract TestStableTokenTest is Test {
     function setUp() public {
         // Deploy implementation
         TestStableToken implementation = new TestStableToken();
-        
+
         // Deploy proxy with initialization
         bytes memory data = abi.encodeCall(TestStableToken.initialize, ());
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), data);
-        
+
         // Wrap proxy in TestStableToken interface
         token = TestStableToken(address(proxy));
-        
+
         owner = address(this);
         user1 = vm.addr(1);
         user2 = vm.addr(2);

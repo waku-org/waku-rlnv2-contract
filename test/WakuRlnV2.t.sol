@@ -28,7 +28,7 @@ contract WakuRlnV2Test is Test {
         bytes memory data = abi.encodeCall(TestStableToken.initialize, ());
         ERC1967Proxy tokenProxy = new ERC1967Proxy(address(implementation), data);
         token = TestStableToken(address(tokenProxy));
-        
+
         IPriceCalculator priceCalculator = (new DeployPriceCalculator()).deploy(address(token));
         WakuRlnV2 wakuRlnV2 = (new DeployWakuRlnV2()).deploy();
         ERC1967Proxy proxy = (new DeployProxy()).deploy(address(priceCalculator), address(wakuRlnV2));

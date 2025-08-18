@@ -13,10 +13,10 @@ contract DeployTokenWithProxy is BaseScript {
     function deploy() public returns (ERC1967Proxy) {
         // Deploy the initial implementation
         address implementation = address(new TestStableToken());
-        
+
         // Encode the initialize call
         bytes memory data = abi.encodeCall(TestStableToken.initialize, ());
-        
+
         // Deploy the proxy with initialization data
         return new ERC1967Proxy(implementation, data);
     }
