@@ -27,7 +27,13 @@ This script deploys both the proxy and the TestStableToken implementation, initi
 implementation.
 
 ```bash
-forge script script/DeployTokenWithProxy.s.sol:DeployTokenWithProxy --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast
+ETH_FROM=$DEPLOYER_ACCOUNT_ADDRESS forge script script/DeployTokenWithProxy.s.sol:DeployTokenWithProxy --rpc-url $RPC_URL --broadcast --private_key $DEPLOYER_ACCOUNT_PRIVATE_KEY
+```
+
+or
+
+```bash
+MNEMONIC=$TWELVE_WORD_MNEMONIC forge script script/DeployTokenWithProxy.s.sol:DeployTokenWithProxy --rpc-url $RPC_URL --broadcast
 ```
 
 ### Deploy only TestStableToken contract implementation
@@ -36,20 +42,20 @@ This script deploys only the TestStableToken implementation, which can then be u
 point to this new implementation.
 
 ```bash
-forge script test/TestStableToken.sol:TestStableTokenFactory --tc TestStableTokenFactory --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast
+forge script test/TestStableToken.sol:TestStableTokenFactory --tc TestStableTokenFactory --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY --broadcast
 ```
 
 ### Update the proxy contract to point to the new implementation
 
 ```bash
 # Upgrade the proxy to a new implementation
-cast send $TOKEN_PROXY_ADDRESS "upgradeTo(address)" $NEW_IMPLEMENTATION_ADDRESS --rpc-url $RPC_URL --private-key $PRIVATE_KEY
+cast send $TOKEN_PROXY_ADDRESS "upgradeTo(address)" $NEW_IMPLEMENTATION_ADDRESS --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY
 ```
 
 ### Add account to the allowlist to enable minting
 
 ```bash
-cast send $TOKEN_PROXY_ADDRESS "addMinter(address)" $ACCOUNT_ADDRESS --rpc-url $RPC_URL --private-key $PRIVATE_KEY
+cast send $TOKEN_PROXY_ADDRESS "addMinter(address)" $ACCOUNT_ADDRESS --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY
 ```
 
 ### Mint tokens to the account
@@ -67,7 +73,7 @@ cast send $TOKEN_PROXY_ADDRESS "approve(address,uint256)" $TOKEN_SPENDER_ADDRESS
 ### Remove the account from the allowlist to prevent further minting
 
 ```bash
-cast send $TOKEN_PROXY_ADDRESS "removeMinter(address)" $ACCOUNT_ADDRESS --rpc-url $RPC_URL --private-key $PRIVATE_KEY
+cast send $TOKEN_PROXY_ADDRESS "removeMinter(address)" $ACCOUNT_ADDRESS --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY
 ```
 
 ### Query token information

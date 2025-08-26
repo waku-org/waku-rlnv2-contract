@@ -3,6 +3,7 @@ pragma solidity >=0.8.19 <0.9.0;
 
 import { Test } from "forge-std/Test.sol";
 import { DeployPriceCalculator, DeployWakuRlnV2, DeployProxy } from "../script/Deploy.s.sol";
+import { DeployTokenWithProxy } from "../script/DeployTokenWithProxy.s.sol";
 import "../src/WakuRlnV2.sol"; // solhint-disable-line
 import "../src/Membership.sol"; // solhint-disable-line
 import { IPriceCalculator } from "../src/IPriceCalculator.sol";
@@ -17,16 +18,16 @@ import "forge-std/console.sol";
 contract WakuRlnV2Test is Test {
     WakuRlnV2 internal w;
     TestStableToken internal token;
+    DeployTokenWithProxy internal tokenDeployer;
 
     address internal deployer;
 
     uint256[] internal noIdCommitmentsToErase = new uint256[](0);
 
     function setUp() public virtual {
-        // Deploy TestStableToken through proxy with initialization
-        TestStableToken implementation = new TestStableToken();
-        bytes memory data = abi.encodeCall(TestStableToken.initialize, ());
-        ERC1967Proxy tokenProxy = new ERC1967Proxy(address(implementation), data);
+        // Deploy TestStableToken through proxy using deployment script
+        tokenDeployer = new DeployTokenWithProxy();
+        ERC1967Proxy tokenProxy = tokenDeployer.deploy();
         token = TestStableToken(address(tokenProxy));
 
         IPriceCalculator priceCalculator = (new DeployPriceCalculator()).deploy(address(token));
@@ -37,6 +38,7 @@ contract WakuRlnV2Test is Test {
 
         // Minting a large number of tokens to not have to worry about
         // Not having enough balance
+        vm.prank(address(tokenDeployer));
         token.mint(address(this), 100_000_000 ether);
     }
 
@@ -639,6 +641,7 @@ contract WakuRlnV2Test is Test {
         vm.prank(priceCalculator.owner());
         priceCalculator.setTokenAndPrice(address(token), 5 wei);
         (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        vm.prank(address(tokenDeployer));
         token.mint(address(this), price);
         vm.assume(
             w.minMembershipRateLimit() <= membershipRateLimit && membershipRateLimit <= w.maxMembershipRateLimit()
