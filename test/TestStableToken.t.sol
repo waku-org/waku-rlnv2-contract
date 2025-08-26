@@ -176,7 +176,7 @@ contract TestStableTokenTest is Test {
         assertEq(token.totalSupply(), mintAmount);
 
         vm.prank(user2);
-        require(token.transfer(owner, 200 ether));
+        assertTrue(token.transfer(owner, 200 ether));
 
         assertEq(token.balanceOf(user2), 800 ether);
         assertEq(token.balanceOf(owner), 200 ether);
