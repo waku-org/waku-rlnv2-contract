@@ -23,11 +23,17 @@ token distribution while mimicking DAI's behaviour.
 
 ### Deploy new TestStableToken with proxy contract
 
+This script deploys both the proxy and the TestStableToken implementation, initializing the proxy to point to the
+new implementation.
+
 ```bash
 forge script script/DeployTokenWithProxy.s.sol:DeployTokenWithProxy --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast
 ```
 
 ### Deploy only TestStableToken contract implementation
+
+This script deploys only the TestStableToken implementation, which can then be used to update the proxy contract to
+point to this new implementation.
 
 ```bash
 forge script test/TestStableToken.sol:TestStableTokenFactory --tc TestStableTokenFactory --rpc-url $RPC_URL --private-key $PRIVATE_KEY --broadcast
