@@ -931,7 +931,7 @@ contract WakuRlnV2Test is Test {
             , // rateLimit
             , // index
             , // holder
-            // token
+                // token
         ) = w.memberships(idCommitment1);
         vm.warp(graceStart);
         uint256[] memory toErase = new uint256[](1);
