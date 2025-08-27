@@ -908,4 +908,64 @@ contract WakuRlnV2Test is Test {
         w.register(101, minRateLimit, noIdCommitmentsToErase);
         assertEq(w.currentTotalRateLimit(), 100);
     }
+
+    function test__MerkleTreeUpdateAfterErasureAndReuse() external {
+        uint256 idCommitment1 = 1;
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        token.approve(address(w), price);
+        w.register(idCommitment1, rateLimit, noIdCommitmentsToErase);
+
+        uint256 initialRoot = w.root();
+        uint256 rateCommitment1 = PoseidonT3.hash([idCommitment1, rateLimit]);
+        uint256[] memory commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, 0);
+        assertEq(commitments[0], rateCommitment1);
+
+        // Erase lazily
+        (
+            , // depositAmount
+            , // activeDuration
+            uint256 graceStart,
+            , // gracePeriodDuration
+            , // rateLimit
+            , // index
+            , // holder
+            // token
+        ) = w.memberships(idCommitment1);
+        vm.warp(graceStart);
+        uint256[] memory toErase = new uint256[](1);
+        toErase[0] = idCommitment1;
+        w.eraseMemberships(toErase, false); // Lazy
+
+        // Root unchanged since lazy
+        assertEq(w.root(), initialRoot);
+
+        // Reuse index 0 with new commitment
+        uint256 idCommitment2 = 2;
+        token.approve(address(w), price);
+        w.register(idCommitment2, rateLimit, noIdCommitmentsToErase);
+
+        uint256 rateCommitment2 = PoseidonT3.hash([idCommitment2, rateLimit]);
+        commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, 0);
+        assertEq(commitments[0], rateCommitment2);
+        assertNotEq(w.root(), initialRoot); // Root updated
+
+        // Verify proof
+        uint256[20] memory proof = w.getMerkleProof(0);
+        uint256 updatedRoot = w.root();
+        uint256 leaf = commitments[0];
+        uint256 computedRoot = leaf;
+        uint256 index = 0;
+        for (uint8 i = 0; i < 20; i++) {
+            uint256 sibling = proof[i];
+            if (index % 2 == 0) {
+                computedRoot = PoseidonT3.hash([computedRoot, sibling]);
+            } else {
+                computedRoot = PoseidonT3.hash([sibling, computedRoot]);
+            }
+            index >>= 1;
+        }
+        assertEq(computedRoot, updatedRoot);
+    }
 }
