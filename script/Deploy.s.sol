@@ -9,7 +9,7 @@ import { LazyIMT } from "@zk-kit/imt.sol/LazyIMT.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { DevOpsTools } from "lib/foundry-devops/src/DevOpsTools.sol";
 import { BaseScript } from "./Base.s.sol";
-import "forge-std/console.sol";
+import { console } from "forge-std/console.sol";
 
 contract DeployPriceCalculator is BaseScript {
     function run() public broadcast returns (address) {
