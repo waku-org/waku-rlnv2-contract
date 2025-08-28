@@ -968,4 +968,51 @@ contract WakuRlnV2Test is Test {
         }
         assertEq(computedRoot, updatedRoot);
     }
+
+    function test__ZeroGracePeriodDuration() external {
+        // Deploy new instance with zero grace period
+        IPriceCalculator priceCalculator = (new DeployPriceCalculator()).deploy(address(token));
+        WakuRlnV2 wakuRlnV2 = (new DeployWakuRlnV2()).deploy();
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(wakuRlnV2),
+            abi.encodeCall(WakuRlnV2.initialize, (address(priceCalculator), 100, 1, 10, 10 minutes, 0))
+        );
+        WakuRlnV2 wZeroGrace = WakuRlnV2(address(proxy));
+
+        uint256 idCommitment = 1;
+        uint32 rateLimit = wZeroGrace.minMembershipRateLimit();
+        (, uint256 price) = wZeroGrace.priceCalculator().calculate(rateLimit);
+
+        token.approve(address(wZeroGrace), price);
+        wZeroGrace.register(idCommitment, rateLimit, noIdCommitmentsToErase);
+
+        (
+            , // depositAmount
+            , // activeDuration
+            uint256 gracePeriodStart,
+            , // gracePeriodDuration
+            , // rateLimit
+            , // index
+            , // holder
+                // token
+        ) = wZeroGrace.memberships(idCommitment);
+
+        // Warp just after active period
+        vm.warp(gracePeriodStart + 1);
+        assertTrue(wZeroGrace.isExpired(idCommitment));
+        assertFalse(wZeroGrace.isInGracePeriod(idCommitment));
+
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = idCommitment;
+        vm.expectRevert(abi.encodeWithSelector(CannotExtendNonGracePeriodMembership.selector, idCommitment));
+        wZeroGrace.extendMemberships(ids);
+
+        // Erase and check event
+        vm.expectEmit(true, true, true, true);
+        emit MembershipUpgradeable.MembershipExpired(idCommitment, rateLimit, 0);
+        wZeroGrace.eraseMemberships(ids);
+
+        (,,,, uint32 fetchedRateLimit,,,) = wZeroGrace.memberships(idCommitment);
+        assertEq(fetchedRateLimit, 0);
+    }
 }
