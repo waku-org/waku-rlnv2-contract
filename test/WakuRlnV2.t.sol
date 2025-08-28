@@ -1015,4 +1015,50 @@ contract WakuRlnV2Test is Test {
         (,,,, uint32 fetchedRateLimit,,,) = wZeroGrace.memberships(idCommitment);
         assertEq(fetchedRateLimit, 0);
     }
+
+    function test__FullCleanUpErasure() external {
+        uint256 idCommitment = 1;
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        token.approve(address(w), price);
+        w.register(idCommitment, rateLimit, noIdCommitmentsToErase);
+
+        uint256 initialRoot = w.root();
+
+        (
+            , // depositAmount
+            , // activeDuration
+            uint256 graceStart,
+            uint32 gracePeriodDuration,
+            , // rateLimit
+            , // index
+            , // holder
+                // token
+        ) = w.memberships(idCommitment);
+
+        vm.warp(graceStart + gracePeriodDuration + 1); // Expire
+
+        uint256[] memory toErase = new uint256[](1);
+        toErase[0] = idCommitment;
+        w.eraseMemberships(toErase, true); // Full clean-up
+
+        // Use public function to get rate commitment at index 0
+        uint256[] memory commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, 0);
+        assertEq(commitments[0], 0);
+
+        assertNotEq(w.root(), initialRoot); // Root changed
+
+        // Count the length of indicesOfLazilyErasedMemberships
+        uint256 erasedLength = 0;
+        while (true) {
+            try w.indicesOfLazilyErasedMemberships(erasedLength) {
+                erasedLength++;
+            } catch {
+                break;
+            }
+        }
+        assertEq(erasedLength, 1);
+        assertEq(w.nextFreeIndex(), 1); // Unchanged
+    }
 }
