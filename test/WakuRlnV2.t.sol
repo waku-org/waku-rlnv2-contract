@@ -1,19 +1,90 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity >=0.8.19 <0.9.0;
 
-import { Test } from "forge-std/Test.sol";
-import { DeployPriceCalculator, DeployWakuRlnV2, DeployProxy } from "../script/Deploy.s.sol";
+import "../src/Membership.sol";
+import "../src/WakuRlnV2.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "forge-std/console.sol"; // solhint-disable-line
+import { DeployPriceCalculator, DeployWakuRlnV2, DeployProxy } from "../script/Deploy.s.sol"; // solhint-disable-line
 import { DeployTokenWithProxy } from "../script/DeployTokenWithProxy.s.sol";
-import "../src/WakuRlnV2.sol"; // solhint-disable-line
-import "../src/Membership.sol"; // solhint-disable-line
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { IPriceCalculator } from "../src/IPriceCalculator.sol";
 import { LinearPriceCalculator } from "../src/LinearPriceCalculator.sol";
-import { TestStableToken } from "./TestStableToken.sol";
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
+import { Test } from "forge-std/Test.sol"; // For signature manipulation
+import { TestStableToken } from "./TestStableToken.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol"; // For signature manipulation
-import "forge-std/console.sol";
+
+contract MaliciousToken is TestStableToken, ReentrancyGuard {
+    address public target;
+    bytes public calldataToReenter;
+    bool public failTransferEnabled;
+
+    function initialize(
+        address _reentrancyTarget,
+        bytes memory _reentrancyCalldata,
+        bool _failTransferEnabled
+    )
+        public
+        initializer
+    {
+        super.initialize();
+        target = _reentrancyTarget;
+        calldataToReenter = _reentrancyCalldata;
+        failTransferEnabled = _failTransferEnabled;
+    }
+
+    function setReentrancyTarget(address _target) external onlyOwner {
+        target = _target;
+    }
+
+    function setCalldataToReenter(bytes memory _calldata) external onlyOwner {
+        calldataToReenter = _calldata;
+    }
+
+    function setFailTransferEnabled(bool _enabled) external onlyOwner {
+        failTransferEnabled = _enabled;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) public override nonReentrant returns (bool) {
+        if (failTransferEnabled) {
+            revert("Malicious transfer failure");
+        }
+        if (target != address(0)) {
+            (bool success, bytes memory data) = target.call(calldataToReenter);
+            if (!success) {
+                console.logBytes(data); // Log revert reason for debugging
+                // Propagate the original revert reason
+                assembly {
+                    revert(add(data, 0x20), mload(data))
+                }
+            }
+        }
+        return super.transferFrom(from, to, amount);
+    }
+
+    function transfer(address to, uint256 amount) public override nonReentrant returns (bool) {
+        if (failTransferEnabled) {
+            revert("Malicious transfer failure");
+        }
+        if (target != address(0)) {
+            (bool success, bytes memory data) = target.call(calldataToReenter);
+            if (!success) {
+                console.logBytes(data); // Log revert reason for debugging
+                // Propagate the original revert reason
+                assembly {
+                    revert(add(data, 0x20), mload(data))
+                }
+            }
+        }
+        return super.transfer(to, amount);
+    }
+
+    function failTransfer() external pure {
+        revert("Malicious transfer failure");
+    }
+}
 
 contract WakuRlnV2Test is Test {
     WakuRlnV2 internal w;
@@ -36,8 +107,18 @@ contract WakuRlnV2Test is Test {
 
         w = WakuRlnV2(address(proxy));
 
-        // Minting a large number of tokens to not have to worry about
-        // Not having enough balance
+        // Log owner for debugging
+        console.log("WakuRlnV2 owner: ", w.owner());
+
+        // Transfer ownership to address(this)
+        vm.prank(w.owner());
+        try w.transferOwnership(address(this)) {
+            console.log("Ownership transferred to: ", w.owner());
+        } catch {
+            console.log("Failed to transfer ownership");
+        }
+
+        // Mint tokens
         vm.prank(address(tokenDeployer));
         token.mint(address(this), 100_000_000 ether);
     }
@@ -788,5 +869,378 @@ contract WakuRlnV2Test is Test {
             )
         );
         assertEq(fetchedImpl, newImpl);
+    }
+
+    function test__ErasingNonExistentMembership() external {
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 999; // Non-existent
+        assertFalse(w.isInMembershipSet(999), "ID should not exist");
+        uint256 initialRoot = w.root();
+        uint256 initialNextFreeIndex = w.nextFreeIndex();
+
+        vm.expectRevert(abi.encodeWithSelector(MembershipDoesNotExist.selector, 999));
+        w.eraseMemberships(ids);
+
+        assertEq(w.root(), initialRoot, "Merkle root should not change");
+        assertEq(w.nextFreeIndex(), initialNextFreeIndex, "Next free index should not change");
+    }
+
+    function test__GracePeriodExtensionEdgeCases() external {
+        uint256 idCommitment = 1;
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        token.approve(address(w), price);
+        w.register(idCommitment, rateLimit, noIdCommitmentsToErase);
+
+        // Destructure the memberships mapping tuple, skipping unused fields
+        (
+            , // depositAmount
+            uint32 activeDuration,
+            uint256 gracePeriodStart,
+            uint32 gracePeriodDuration,
+            uint32 rateLimitFetched,
+            uint32 indexFetched,
+            address holderFetched,
+            // tokenFetched
+        ) = w.memberships(idCommitment);
+        assertEq(rateLimitFetched, rateLimit);
+        assertEq(holderFetched, address(this));
+        assertEq(indexFetched, 0);
+
+        // Before grace period (still active)
+        vm.warp(gracePeriodStart - 1);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = idCommitment;
+        vm.expectRevert(abi.encodeWithSelector(CannotExtendNonGracePeriodMembership.selector, idCommitment));
+        w.extendMemberships(ids);
+
+        // At start of grace period
+        vm.warp(gracePeriodStart);
+        assertTrue(w.isInGracePeriod(idCommitment));
+        vm.expectEmit(true, true, true, true);
+        emit MembershipUpgradeable.MembershipExtended(
+            idCommitment, rateLimit, 0, gracePeriodStart + gracePeriodDuration + activeDuration
+        );
+        w.extendMemberships(ids);
+
+        // Verify updated grace period start
+        (,, uint256 newGracePeriodStart,,,,,) = w.memberships(idCommitment);
+        assertEq(newGracePeriodStart, gracePeriodStart + gracePeriodDuration + activeDuration);
+
+        // Non-holder attempt
+        vm.warp(newGracePeriodStart);
+        vm.prank(vm.addr(1));
+        vm.expectRevert(abi.encodeWithSelector(NonHolderCannotExtend.selector, idCommitment));
+        w.extendMemberships(ids);
+
+        // After grace period (expired)
+        vm.warp(newGracePeriodStart + gracePeriodDuration + 1);
+        vm.expectRevert(abi.encodeWithSelector(CannotExtendNonGracePeriodMembership.selector, idCommitment));
+        w.extendMemberships(ids);
+    }
+
+    function test__MaxTotalRateLimitEdgeCases() external {
+        vm.startPrank(w.owner());
+        w.setMinMembershipRateLimit(1); // Ensure minMembershipRateLimit <= 10
+        w.setMaxMembershipRateLimit(10); // Ensure maxMembershipRateLimit <= 100
+        w.setMaxTotalRateLimit(100);
+        vm.stopPrank();
+
+        uint32 minRateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(minRateLimit);
+
+        // Register until just below max
+        for (uint32 i = 1; i <= 99; i++) {
+            token.approve(address(w), price);
+            w.register(i, minRateLimit, noIdCommitmentsToErase);
+        }
+        assertEq(w.currentTotalRateLimit(), 99);
+
+        // Register to reach max
+        token.approve(address(w), price);
+        w.register(100, minRateLimit, noIdCommitmentsToErase);
+        assertEq(w.currentTotalRateLimit(), 100);
+
+        // Attempt to exceed
+        token.approve(address(w), price);
+        vm.expectRevert(CannotExceedMaxTotalRateLimit.selector);
+        w.register(101, minRateLimit, noIdCommitmentsToErase);
+
+        // Destructure memberships to get gracePeriodStartTimestamp and gracePeriodDuration
+        (
+            , // depositAmount
+            , // activeDuration
+            uint256 graceStart,
+            uint32 gracePeriodDuration,
+            , // rateLimit
+            , // index
+            , // holder
+                // token
+        ) = w.memberships(100);
+        vm.warp(graceStart + gracePeriodDuration + 1); // Expire one
+
+        uint256[] memory toErase = new uint256[](1);
+        toErase[0] = 100;
+        w.eraseMemberships(toErase);
+        assertEq(w.currentTotalRateLimit(), 99);
+
+        token.approve(address(w), price);
+        w.register(101, minRateLimit, noIdCommitmentsToErase);
+        assertEq(w.currentTotalRateLimit(), 100);
+    }
+
+    function test__MerkleTreeUpdateAfterErasureAndReuse() external {
+        uint256 idCommitment1 = 1;
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        token.approve(address(w), price);
+        w.register(idCommitment1, rateLimit, noIdCommitmentsToErase);
+
+        uint256 initialRoot = w.root();
+        uint256 rateCommitment1 = PoseidonT3.hash([idCommitment1, rateLimit]);
+        uint256[] memory commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, 0);
+        assertEq(commitments[0], rateCommitment1);
+
+        // Erase lazily
+        (
+            , // depositAmount
+            , // activeDuration
+            uint256 graceStart,
+            , // gracePeriodDuration
+            , // rateLimit
+            , // index
+            , // holder
+                // token
+        ) = w.memberships(idCommitment1);
+        vm.warp(graceStart);
+        uint256[] memory toErase = new uint256[](1);
+        toErase[0] = idCommitment1;
+        w.eraseMemberships(toErase, false); // Lazy
+
+        // Root unchanged since lazy
+        assertEq(w.root(), initialRoot);
+
+        // Reuse index 0 with new commitment
+        uint256 idCommitment2 = 2;
+        token.approve(address(w), price);
+        w.register(idCommitment2, rateLimit, noIdCommitmentsToErase);
+
+        uint256 rateCommitment2 = PoseidonT3.hash([idCommitment2, rateLimit]);
+        commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, 0);
+        assertEq(commitments[0], rateCommitment2);
+        assertNotEq(w.root(), initialRoot); // Root updated
+
+        // Verify proof
+        uint256[20] memory proof = w.getMerkleProof(0);
+        uint256 updatedRoot = w.root();
+        uint256 leaf = commitments[0];
+        uint256 computedRoot = leaf;
+        uint256 index = 0;
+        for (uint8 i = 0; i < 20; i++) {
+            uint256 sibling = proof[i];
+            if (index % 2 == 0) {
+                computedRoot = PoseidonT3.hash([computedRoot, sibling]);
+            } else {
+                computedRoot = PoseidonT3.hash([sibling, computedRoot]);
+            }
+            index >>= 1;
+        }
+        assertEq(computedRoot, updatedRoot);
+    }
+
+    function test__ZeroGracePeriodDuration() external {
+        // Deploy new instance with zero grace period
+        IPriceCalculator priceCalculator = (new DeployPriceCalculator()).deploy(address(token));
+        WakuRlnV2 wakuRlnV2 = (new DeployWakuRlnV2()).deploy();
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(wakuRlnV2),
+            abi.encodeCall(WakuRlnV2.initialize, (address(priceCalculator), 100, 1, 10, 10 minutes, 0))
+        );
+        WakuRlnV2 wZeroGrace = WakuRlnV2(address(proxy));
+
+        uint256 idCommitment = 1;
+        uint32 rateLimit = wZeroGrace.minMembershipRateLimit();
+        (, uint256 price) = wZeroGrace.priceCalculator().calculate(rateLimit);
+
+        token.approve(address(wZeroGrace), price);
+        wZeroGrace.register(idCommitment, rateLimit, noIdCommitmentsToErase);
+
+        (
+            , // depositAmount
+            , // activeDuration
+            uint256 gracePeriodStart,
+            , // gracePeriodDuration
+            , // rateLimit
+            , // index
+            , // holder
+                // token
+        ) = wZeroGrace.memberships(idCommitment);
+
+        // Warp just after active period
+        vm.warp(gracePeriodStart + 1);
+        assertTrue(wZeroGrace.isExpired(idCommitment));
+        assertFalse(wZeroGrace.isInGracePeriod(idCommitment));
+
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = idCommitment;
+        vm.expectRevert(abi.encodeWithSelector(CannotExtendNonGracePeriodMembership.selector, idCommitment));
+        wZeroGrace.extendMemberships(ids);
+
+        // Erase and check event
+        vm.expectEmit(true, true, true, true);
+        emit MembershipUpgradeable.MembershipExpired(idCommitment, rateLimit, 0);
+        wZeroGrace.eraseMemberships(ids);
+
+        (,,,, uint32 fetchedRateLimit,,,) = wZeroGrace.memberships(idCommitment);
+        assertEq(fetchedRateLimit, 0);
+    }
+
+    function test__FullCleanUpErasure() external {
+        uint256 idCommitment = 1;
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        token.approve(address(w), price);
+        w.register(idCommitment, rateLimit, noIdCommitmentsToErase);
+
+        uint256 initialRoot = w.root();
+
+        (
+            , // depositAmount
+            , // activeDuration
+            uint256 graceStart,
+            uint32 gracePeriodDuration,
+            , // rateLimit
+            , // index
+            , // holder
+                // token
+        ) = w.memberships(idCommitment);
+
+        vm.warp(graceStart + gracePeriodDuration + 1); // Expire
+
+        uint256[] memory toErase = new uint256[](1);
+        toErase[0] = idCommitment;
+        w.eraseMemberships(toErase, true); // Full clean-up
+
+        // Use public function to get rate commitment at index 0
+        uint256[] memory commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, 0);
+        assertEq(commitments[0], 0);
+
+        assertNotEq(w.root(), initialRoot); // Root changed
+
+        // Count the length of indicesOfLazilyErasedMemberships
+        uint256 erasedLength = 0;
+        while (true) {
+            try w.indicesOfLazilyErasedMemberships(erasedLength) {
+                erasedLength++;
+            } catch {
+                break;
+            }
+        }
+        assertEq(erasedLength, 1);
+        assertEq(w.nextFreeIndex(), 1); // Unchanged
+    }
+
+    function test__TokenTransferFailures() external {
+        // Deploy MaliciousToken implementation
+        MaliciousToken maliciousTokenImpl = new MaliciousToken();
+
+        // Deploy proxy with no reentrancy (enables failTransfer)
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(maliciousTokenImpl), abi.encodeCall(MaliciousToken.initialize, (address(0), "", true))
+        );
+        MaliciousToken maliciousToken = MaliciousToken(address(proxy));
+
+        // Mint tokens
+        maliciousToken.mint(address(this), 100_000_000 ether);
+
+        // Set price calculator
+        vm.prank(w.owner());
+        w.setPriceCalculator(address(new DeployPriceCalculator().deploy(address(maliciousToken))));
+
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        // Approve tokens
+        maliciousToken.approve(address(w), price);
+
+        // Expect transfer failure
+        vm.expectRevert("Malicious transfer failure");
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+    }
+
+    function test__ReentrancyProtection() external {
+        // Deploy MaliciousToken implementation
+        MaliciousToken maliciousTokenImpl = new MaliciousToken();
+
+        // Prepare reentrancy calldata for register
+        uint32 rateLimit = w.minMembershipRateLimit();
+        bytes memory reenterCalldata = abi.encodeWithSelector(
+            w.register.selector,
+            999, // Unique idCommitment
+            rateLimit,
+            noIdCommitmentsToErase
+        );
+
+        // Deploy proxy and initialize with reentrancy target
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(maliciousTokenImpl), abi.encodeCall(MaliciousToken.initialize, (address(w), reenterCalldata, false))
+        );
+        MaliciousToken maliciousToken = MaliciousToken(address(proxy));
+
+        // Mint tokens
+        maliciousToken.mint(address(this), 100_000_000 ether);
+
+        // Set price calculator
+        vm.prank(w.owner());
+        w.setPriceCalculator(address(new DeployPriceCalculator().deploy(address(maliciousToken))));
+
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        // Approve tokens for initial and reentrant register
+        maliciousToken.approve(address(w), price * 2);
+
+        // Test reentrancy on register
+        vm.expectRevert("ReentrancyGuard: reentrant call");
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+
+        // Test reentrancy on withdraw
+        // Deploy another malicious for withdraw, initialize without reentrancy initially
+        ERC1967Proxy proxyWithdraw = new ERC1967Proxy(
+            address(maliciousTokenImpl), abi.encodeCall(MaliciousToken.initialize, (address(0), "", false))
+        );
+        MaliciousToken maliciousTokenWithdraw = MaliciousToken(address(proxyWithdraw));
+
+        // Mint tokens
+        maliciousTokenWithdraw.mint(address(this), 100_000_000 ether);
+
+        // Set price calculator to malicious for registration
+        vm.prank(w.owner());
+        w.setPriceCalculator(address(new DeployPriceCalculator().deploy(address(maliciousTokenWithdraw))));
+
+        // Approve tokens
+        maliciousTokenWithdraw.approve(address(w), price);
+
+        // Register (no reentrancy during register)
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+
+        // Expire membership
+        (,, uint256 gracePeriodStartTimestamp, uint32 gracePeriodDuration,,,,) = w.memberships(1);
+        vm.warp(gracePeriodStartTimestamp + gracePeriodDuration + 1);
+        uint256[] memory commitmentsToErase = new uint256[](1);
+        commitmentsToErase[0] = 1;
+        w.eraseMemberships(commitmentsToErase);
+
+        // Now enable reentrancy for withdraw
+        maliciousTokenWithdraw.setReentrancyTarget(address(w));
+        maliciousTokenWithdraw.setCalldataToReenter(
+            abi.encodeWithSelector(w.withdraw.selector, address(maliciousTokenWithdraw))
+        );
+
+        // Test reentrancy on withdraw
+        vm.expectRevert("ReentrancyGuard: reentrant call");
+        w.withdraw(address(maliciousTokenWithdraw));
     }
 }
