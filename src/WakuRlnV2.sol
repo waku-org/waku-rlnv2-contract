@@ -7,10 +7,6 @@ import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
 import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {
-    ReentrancyGuardUpgradeable
-} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
-
 
 import { MembershipUpgradeable } from "./Membership.sol";
 import { IPriceCalculator } from "./IPriceCalculator.sol";
@@ -24,13 +20,7 @@ error InvalidIdCommitment(uint256 idCommitment);
 /// Invalid pagination query
 error InvalidPaginationQuery(uint256 startIndex, uint256 endIndex);
 
-contract WakuRlnV2 is
-    Initializable,
-    OwnableUpgradeable,
-    UUPSUpgradeable,
-    MembershipUpgradeable,
-    ReentrancyGuardUpgradeable
-{
+contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, MembershipUpgradeable {
     /// @notice The Field
     uint256 public constant Q =
         21_888_242_871_839_275_222_246_405_745_257_275_088_548_364_400_416_034_343_698_204_186_575_808_495_617;
@@ -99,7 +89,6 @@ contract WakuRlnV2 is
             _activeDuration,
             _gracePeriod
         );
-        __ReentrancyGuard_init();
 
         MAX_MEMBERSHIP_SET_SIZE = uint32(1 << MERKLE_TREE_DEPTH);
         deployedBlockNumber = uint32(block.number);
@@ -175,7 +164,6 @@ contract WakuRlnV2 is
         uint256[] calldata idCommitmentsToErase
     )
         external
-        nonReentrant
         onlyValidIdCommitment(idCommitment)
         noDuplicateMembership(idCommitment)
         membershipSetNotFull
@@ -223,7 +211,7 @@ contract WakuRlnV2 is
 
     /// @notice Extend a grace-period membership under the same conditions
     /// @param idCommitments list of idCommitments of memberships to extend
-    function extendMemberships(uint256[] calldata idCommitments) external nonReentrant {
+    function extendMemberships(uint256[] calldata idCommitments) external {
         for (uint256 i = 0; i < idCommitments.length; i++) {
             _extendMembership(_msgSender(), idCommitments[i]);
         }
@@ -235,7 +223,7 @@ contract WakuRlnV2 is
     /// The holder can then withdraw the deposited tokens.
     /// @param idCommitments The list of idCommitments of the memberships to erase
     /// set
-    function eraseMemberships(uint256[] calldata idCommitments) external nonReentrant {
+    function eraseMemberships(uint256[] calldata idCommitments) external {
         _eraseMemberships(idCommitments, false);
     }
 
@@ -245,7 +233,7 @@ contract WakuRlnV2 is
     /// this function decreases Merkle tree size and spends more gas (if eraseFromMembershipSet == true).
     /// @param idCommitments The list of idCommitments of the memberships to erase
     /// @param eraseFromMembershipSet Indicates whether to erase membership data from the membership set
-    function eraseMemberships(uint256[] calldata idCommitments, bool eraseFromMembershipSet) external nonReentrant {
+    function eraseMemberships(uint256[] calldata idCommitments, bool eraseFromMembershipSet) external {
         _eraseMemberships(idCommitments, eraseFromMembershipSet);
     }
 
@@ -272,7 +260,7 @@ contract WakuRlnV2 is
 
     /// @notice Withdraw any available deposit balance in tokens after a membership is erased
     /// @param token The address of the token to withdraw
-    function withdraw(address token) external nonReentrant {
+    function withdraw(address token) external {
         _withdraw(_msgSender(), token);
     }
 
