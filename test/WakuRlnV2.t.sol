@@ -1,19 +1,90 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity >=0.8.19 <0.9.0;
 
-import { Test } from "forge-std/Test.sol";
-import { DeployPriceCalculator, DeployWakuRlnV2, DeployProxy } from "../script/Deploy.s.sol";
+import "../src/Membership.sol";
+import "../src/WakuRlnV2.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "forge-std/console.sol"; // solhint-disable-line
+import { DeployPriceCalculator, DeployWakuRlnV2, DeployProxy } from "../script/Deploy.s.sol"; // solhint-disable-line
 import { DeployTokenWithProxy } from "../script/DeployTokenWithProxy.s.sol";
-import "../src/WakuRlnV2.sol"; // solhint-disable-line
-import "../src/Membership.sol"; // solhint-disable-line
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { IPriceCalculator } from "../src/IPriceCalculator.sol";
 import { LinearPriceCalculator } from "../src/LinearPriceCalculator.sol";
-import { TestStableToken } from "./TestStableToken.sol";
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
+import { Test } from "forge-std/Test.sol"; // For signature manipulation
+import { TestStableToken } from "./TestStableToken.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol"; // For signature manipulation
-import "forge-std/console.sol";
+
+contract MaliciousToken is TestStableToken, ReentrancyGuard {
+    address public target;
+    bytes public calldataToReenter;
+    bool public failTransferEnabled;
+
+    function initialize(
+        address _reentrancyTarget,
+        bytes memory _reentrancyCalldata,
+        bool _failTransferEnabled
+    )
+        public
+        initializer
+    {
+        super.initialize();
+        target = _reentrancyTarget;
+        calldataToReenter = _reentrancyCalldata;
+        failTransferEnabled = _failTransferEnabled;
+    }
+
+    function setReentrancyTarget(address _target) external onlyOwner {
+        target = _target;
+    }
+
+    function setCalldataToReenter(bytes memory _calldata) external onlyOwner {
+        calldataToReenter = _calldata;
+    }
+
+    function setFailTransferEnabled(bool _enabled) external onlyOwner {
+        failTransferEnabled = _enabled;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) public override nonReentrant returns (bool) {
+        if (failTransferEnabled) {
+            revert("Malicious transfer failure");
+        }
+        if (target != address(0)) {
+            (bool success, bytes memory data) = target.call(calldataToReenter);
+            if (!success) {
+                console.logBytes(data); // Log revert reason for debugging
+                // Propagate the original revert reason
+                assembly {
+                    revert(add(data, 0x20), mload(data))
+                }
+            }
+        }
+        return super.transferFrom(from, to, amount);
+    }
+
+    function transfer(address to, uint256 amount) public override nonReentrant returns (bool) {
+        if (failTransferEnabled) {
+            revert("Malicious transfer failure");
+        }
+        if (target != address(0)) {
+            (bool success, bytes memory data) = target.call(calldataToReenter);
+            if (!success) {
+                console.logBytes(data); // Log revert reason for debugging
+                // Propagate the original revert reason
+                assembly {
+                    revert(add(data, 0x20), mload(data))
+                }
+            }
+        }
+        return super.transfer(to, amount);
+    }
+
+    function failTransfer() external pure {
+        revert("Malicious transfer failure");
+    }
+}
 
 contract WakuRlnV2Test is Test {
     WakuRlnV2 internal w;
@@ -36,8 +107,18 @@ contract WakuRlnV2Test is Test {
 
         w = WakuRlnV2(address(proxy));
 
-        // Minting a large number of tokens to not have to worry about
-        // Not having enough balance
+        // Log owner for debugging
+        console.log("WakuRlnV2 owner: ", w.owner());
+
+        // Transfer ownership to address(this)
+        vm.prank(w.owner());
+        try w.transferOwnership(address(this)) {
+            console.log("Ownership transferred to: ", w.owner());
+        } catch {
+            console.log("Failed to transfer ownership");
+        }
+
+        // Mint tokens
         vm.prank(address(tokenDeployer));
         token.mint(address(this), 100_000_000 ether);
     }
@@ -1060,5 +1141,106 @@ contract WakuRlnV2Test is Test {
         }
         assertEq(erasedLength, 1);
         assertEq(w.nextFreeIndex(), 1); // Unchanged
+    }
+
+    function test__TokenTransferFailures() external {
+        // Deploy MaliciousToken implementation
+        MaliciousToken maliciousTokenImpl = new MaliciousToken();
+
+        // Deploy proxy with no reentrancy (enables failTransfer)
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(maliciousTokenImpl), abi.encodeCall(MaliciousToken.initialize, (address(0), "", true))
+        );
+        MaliciousToken maliciousToken = MaliciousToken(address(proxy));
+
+        // Mint tokens
+        maliciousToken.mint(address(this), 100_000_000 ether);
+
+        // Set price calculator
+        vm.prank(w.owner());
+        w.setPriceCalculator(address(new DeployPriceCalculator().deploy(address(maliciousToken))));
+
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        // Approve tokens
+        maliciousToken.approve(address(w), price);
+
+        // Expect transfer failure
+        vm.expectRevert("Malicious transfer failure");
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+    }
+
+    function test__ReentrancyProtection() external {
+        // Deploy MaliciousToken implementation
+        MaliciousToken maliciousTokenImpl = new MaliciousToken();
+
+        // Prepare reentrancy calldata for register
+        uint32 rateLimit = w.minMembershipRateLimit();
+        bytes memory reenterCalldata = abi.encodeWithSelector(
+            w.register.selector,
+            999, // Unique idCommitment
+            rateLimit,
+            noIdCommitmentsToErase
+        );
+
+        // Deploy proxy and initialize with reentrancy target
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(maliciousTokenImpl), abi.encodeCall(MaliciousToken.initialize, (address(w), reenterCalldata, false))
+        );
+        MaliciousToken maliciousToken = MaliciousToken(address(proxy));
+
+        // Mint tokens
+        maliciousToken.mint(address(this), 100_000_000 ether);
+
+        // Set price calculator
+        vm.prank(w.owner());
+        w.setPriceCalculator(address(new DeployPriceCalculator().deploy(address(maliciousToken))));
+
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        // Approve tokens for initial and reentrant register
+        maliciousToken.approve(address(w), price * 2);
+
+        // Test reentrancy on register
+        vm.expectRevert("ReentrancyGuard: reentrant call");
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+
+        // Test reentrancy on withdraw
+        // Deploy another malicious for withdraw, initialize without reentrancy initially
+        ERC1967Proxy proxyWithdraw = new ERC1967Proxy(
+            address(maliciousTokenImpl), abi.encodeCall(MaliciousToken.initialize, (address(0), "", false))
+        );
+        MaliciousToken maliciousTokenWithdraw = MaliciousToken(address(proxyWithdraw));
+
+        // Mint tokens
+        maliciousTokenWithdraw.mint(address(this), 100_000_000 ether);
+
+        // Set price calculator to malicious for registration
+        vm.prank(w.owner());
+        w.setPriceCalculator(address(new DeployPriceCalculator().deploy(address(maliciousTokenWithdraw))));
+
+        // Approve tokens
+        maliciousTokenWithdraw.approve(address(w), price);
+
+        // Register (no reentrancy during register)
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+
+        // Expire membership
+        (,, uint256 gracePeriodStartTimestamp, uint32 gracePeriodDuration,,,,) = w.memberships(1);
+        vm.warp(gracePeriodStartTimestamp + gracePeriodDuration + 1);
+        uint256[] memory commitmentsToErase = new uint256[](1);
+        commitmentsToErase[0] = 1;
+        w.eraseMemberships(commitmentsToErase);
+
+        // Now enable reentrancy for withdraw
+        maliciousTokenWithdraw.setReentrancyTarget(address(w));
+        maliciousTokenWithdraw.setCalldataToReenter(
+            abi.encodeWithSelector(w.withdraw.selector, address(maliciousTokenWithdraw))
+        );
+
+        // Test reentrancy on withdraw
+        vm.expectRevert("ReentrancyGuard: reentrant call");
+        w.withdraw(address(maliciousTokenWithdraw));
     }
 }
