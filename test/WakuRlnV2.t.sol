@@ -1243,4 +1243,41 @@ contract WakuRlnV2Test is Test {
         vm.expectRevert("ReentrancyGuard: reentrant call");
         w.withdraw(address(maliciousTokenWithdraw));
     }
+
+    //    function test__ReinitializationProtection() external {
+    //        // Attempt reinitialize
+    //        vm.expectRevert("Initializable: contract is already initialized");
+    //        w.initialize(address(w.priceCalculator()), 100, 1, 10, 10 minutes, 4 minutes);
+    //    }
+
+    function test__ReinitializationProtection() external {
+        // Attempt reinitialize with low-level call for debug
+        (bool success, bytes memory returndata) = address(w).call(
+            abi.encodeWithSelector(
+                w.initialize.selector, address(w.priceCalculator()), 100, 1, 10, 10 minutes, 4 minutes
+            )
+        );
+
+        assertFalse(success, "Initialization should revert");
+
+        if (returndata.length > 0) {
+            // Decode revert reason if it's a string error
+            if (returndata.length >= 68 && bytes4(returndata) == bytes4(keccak256("Error(string)"))) {
+                assembly {
+                    returndata := add(returndata, 0x04)
+                }
+                string memory reason = abi.decode(returndata, (string));
+                console.log("Revert reason:", reason);
+            } else {
+                console.log("Revert data (possibly custom error):");
+                console.logBytes(returndata);
+            }
+        } else {
+            console.log("Revert without data");
+        }
+
+        // Original expectation
+        vm.expectRevert("Initializable: contract is already initialized");
+        w.initialize(address(w.priceCalculator()), 100, 1, 10, 10 minutes, 4 minutes);
+    }
 }
