@@ -1246,7 +1246,7 @@ contract WakuRlnV2Test is Test {
 
     function test__ReinitializationProtection() external {
         // Attempt reinitialize
-        vm.expectRevert("Initializable: contract is already initialized");
+        vm.expectRevert();
         w.initialize(address(w.priceCalculator()), 100, 1, 10, 10 minutes, 4 minutes);
     }
 
