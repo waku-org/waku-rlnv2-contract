@@ -1244,13 +1244,13 @@ contract WakuRlnV2Test is Test {
         w.withdraw(address(maliciousTokenWithdraw));
     }
 
-    //    function test__ReinitializationProtection() external {
-    //        // Attempt reinitialize
-    //        vm.expectRevert("Initializable: contract is already initialized");
-    //        w.initialize(address(w.priceCalculator()), 100, 1, 10, 10 minutes, 4 minutes);
-    //    }
-
     function test__ReinitializationProtection() external {
+        // Attempt reinitialize
+        vm.expectRevert("Initializable: contract is already initialized");
+        w.initialize(address(w.priceCalculator()), 100, 1, 10, 10 minutes, 4 minutes);
+    }
+
+    function test__ReinitializationProtectionDebug() external {
         // Attempt reinitialize with low-level call for debug
         (bool success, bytes memory returndata) = address(w).call(
             abi.encodeWithSelector(
