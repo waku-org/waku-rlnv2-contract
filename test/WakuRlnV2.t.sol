@@ -16,7 +16,7 @@ import { Test } from "forge-std/Test.sol"; // For signature manipulation
 import { TestStableToken } from "./TestStableToken.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
-contract MaliciousToken is TestStableToken, ReentrancyGuard {
+contract MaliciousToken is TestStableToken {
     address public target;
     bytes public calldataToReenter;
     bool public failTransferEnabled;
@@ -47,15 +47,13 @@ contract MaliciousToken is TestStableToken, ReentrancyGuard {
         failTransferEnabled = _enabled;
     }
 
-    function transferFrom(address from, address to, uint256 amount) public override nonReentrant returns (bool) {
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
         if (failTransferEnabled) {
             revert("Malicious transfer failure");
         }
         if (target != address(0)) {
             (bool success, bytes memory data) = target.call(calldataToReenter);
             if (!success) {
-                console.logBytes(data); // Log revert reason for debugging
-                // Propagate the original revert reason
                 assembly {
                     revert(add(data, 0x20), mload(data))
                 }
@@ -64,15 +62,13 @@ contract MaliciousToken is TestStableToken, ReentrancyGuard {
         return super.transferFrom(from, to, amount);
     }
 
-    function transfer(address to, uint256 amount) public override nonReentrant returns (bool) {
+    function transfer(address to, uint256 amount) public override returns (bool) {
         if (failTransferEnabled) {
             revert("Malicious transfer failure");
         }
         if (target != address(0)) {
             (bool success, bytes memory data) = target.call(calldataToReenter);
             if (!success) {
-                console.logBytes(data); // Log revert reason for debugging
-                // Propagate the original revert reason
                 assembly {
                     revert(add(data, 0x20), mload(data))
                 }
@@ -1171,7 +1167,20 @@ contract WakuRlnV2Test is Test {
         w.register(1, rateLimit, noIdCommitmentsToErase);
     }
 
-    function test__ReentrancyProtection() external {
+    function getRevertMsg(bytes memory _returnData) internal pure returns (string memory) {
+        // If the _res length is less than 68, then the transaction failed silently (without a revert message)
+        if (_returnData.length < 68) return "Transaction reverted silently";
+
+        assembly {
+            // Slice the sighash.
+            _returnData := add(_returnData, 0x04)
+        }
+        return abi.decode(_returnData, (string)); // All that remains is the revert string
+    }
+
+    bytes4 constant REENTRY_SELECTOR = bytes4(keccak256("ReentrancyGuardReentrantCall()"));
+
+    function test__ReentrancyProtectionRegister() external {
         // Deploy MaliciousToken implementation
         MaliciousToken maliciousTokenImpl = new MaliciousToken();
 
@@ -1203,11 +1212,27 @@ contract WakuRlnV2Test is Test {
         maliciousToken.approve(address(w), price * 2);
 
         // Test reentrancy on register
-        vm.expectRevert("ReentrancyGuard: reentrant call");
-        w.register(1, rateLimit, noIdCommitmentsToErase);
+        try w.register(1, rateLimit, noIdCommitmentsToErase) {
+            assertTrue(false, "Expected revert for reentrancy on register");
+        } catch (bytes memory reason) {
+            console.log("Revert reason length for register: %d", reason.length);
+            if (reason.length == 4) {
+                console.logBytes4(bytes4(reason));
+                assertEq(bytes4(reason), REENTRY_SELECTOR, "Unexpected custom error for reentry on register");
+            } else {
+                string memory revertReason = getRevertMsg(reason);
+                console.log("Revert string reason for register: %s", revertReason);
+                assertTrue(false, "Unexpected revert format for register");
+            }
+        }
+    }
+
+    function test__ReentrancyProtectionWithdraw() external {
+        // Deploy MaliciousToken implementation
+        MaliciousToken maliciousTokenImpl = new MaliciousToken();
 
         // Test reentrancy on withdraw
-        // Deploy another malicious for withdraw, initialize without reentrancy initially
+        // Deploy malicious for withdraw, initialize without reentrancy initially
         ERC1967Proxy proxyWithdraw = new ERC1967Proxy(
             address(maliciousTokenImpl), abi.encodeCall(MaliciousToken.initialize, (address(0), "", false))
         );
@@ -1215,6 +1240,9 @@ contract WakuRlnV2Test is Test {
 
         // Mint tokens
         maliciousTokenWithdraw.mint(address(this), 100_000_000 ether);
+
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
 
         // Set price calculator to malicious for registration
         vm.prank(w.owner());
@@ -1240,8 +1268,19 @@ contract WakuRlnV2Test is Test {
         );
 
         // Test reentrancy on withdraw
-        vm.expectRevert("ReentrancyGuard: reentrant call");
-        w.withdraw(address(maliciousTokenWithdraw));
+        try w.withdraw(address(maliciousTokenWithdraw)) {
+            assertTrue(false, "Expected revert for reentrancy on withdraw");
+        } catch (bytes memory reason) {
+            console.log("Revert reason length for withdraw: %d", reason.length);
+            if (reason.length == 4) {
+                console.logBytes4(bytes4(reason));
+                assertEq(bytes4(reason), REENTRY_SELECTOR, "Unexpected custom error for reentry on withdraw");
+            } else {
+                string memory revertReason = getRevertMsg(reason);
+                console.log("Revert string reason for withdraw: %s", revertReason);
+                assertTrue(false, "Unexpected revert format for withdraw");
+            }
+        }
     }
 
     function test__ReinitializationProtection() external {
