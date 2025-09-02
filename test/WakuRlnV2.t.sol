@@ -1297,40 +1297,72 @@ contract WakuRlnV2Test is Test {
         assertGt(reentryCount, 1, "Reentrancy did not occur multiple times");
     }
 
-    function test__ReinitializationProtection() external {
-        // Attempt reinitialize
-        vm.expectRevert();
-        w.initialize(address(w.priceCalculator()), 100, 1, 10, 10 minutes, 4 minutes);
+    struct ReinitSnap {
+        address owner;
+        address priceCalculator;
+        uint32 maxTotalRateLimit;
+        uint32 minMembershipRateLimit;
+        uint32 maxMembershipRateLimit;
+        uint32 activeDurationForNewMemberships;
+        uint32 gracePeriodDurationForNewMemberships;
+        uint32 MAX_MEMBERSHIP_SET_SIZE;
+        uint32 deployedBlockNumber;
+        uint32 nextFreeIndex;
+        uint256 currentTotalRateLimit;
+        uint256 merkleRoot;
     }
 
-    function test__ReinitializationProtectionDebug() external {
-        // Attempt reinitialize with low-level call for debug
-        (bool success, bytes memory returndata) = address(w).call(
-            abi.encodeWithSelector(
-                w.initialize.selector, address(w.priceCalculator()), 100, 1, 10, 10 minutes, 4 minutes
-            )
+    function _snapshot() internal view returns (ReinitSnap memory s) {
+        s.owner = w.owner();
+        s.priceCalculator = address(w.priceCalculator());
+        s.maxTotalRateLimit = w.maxTotalRateLimit();
+        s.minMembershipRateLimit = w.minMembershipRateLimit();
+        s.maxMembershipRateLimit = w.maxMembershipRateLimit();
+        s.activeDurationForNewMemberships = w.activeDurationForNewMemberships();
+        s.gracePeriodDurationForNewMemberships = w.gracePeriodDurationForNewMemberships();
+        s.MAX_MEMBERSHIP_SET_SIZE = w.MAX_MEMBERSHIP_SET_SIZE();
+        s.deployedBlockNumber = w.deployedBlockNumber();
+        s.nextFreeIndex = w.nextFreeIndex();
+        s.currentTotalRateLimit = w.currentTotalRateLimit();
+        s.merkleRoot = w.root();
+    }
+
+    function test__ReinitializationProtection() external {
+        // 1) Snapshot before
+        ReinitSnap memory before_ = _snapshot();
+
+        // 2) Prepare args BEFORE expectRevert (to avoid consuming it with view calls)
+        address calc = before_.priceCalculator;
+        uint32 maxTotal = before_.maxTotalRateLimit;
+        uint32 minRate = before_.minMembershipRateLimit;
+        uint32 maxRate = before_.maxMembershipRateLimit;
+        uint32 activeDur = 15;
+        uint32 graceDur = 5;
+
+        // 3) Second initialization must revert (use a loose matcher for OZ v4/v5 compatibility)
+        vm.expectRevert();
+        w.initialize(calc, maxTotal, minRate, maxRate, activeDur, graceDur);
+
+        // 4) Snapshot after and compare
+        ReinitSnap memory after_ = _snapshot();
+
+        assertEq(after_.owner, before_.owner, "owner changed");
+        assertEq(after_.priceCalculator, before_.priceCalculator, "priceCalculator changed");
+        assertEq(after_.maxTotalRateLimit, before_.maxTotalRateLimit, "maxTotalRateLimit changed");
+        assertEq(after_.minMembershipRateLimit, before_.minMembershipRateLimit, "minMembershipRateLimit changed");
+        assertEq(after_.maxMembershipRateLimit, before_.maxMembershipRateLimit, "maxMembershipRateLimit changed");
+        assertEq(
+            after_.activeDurationForNewMemberships, before_.activeDurationForNewMemberships, "activeDuration changed"
         );
-
-        assertFalse(success, "Initialization should revert");
-
-        if (returndata.length > 0) {
-            // Decode revert reason if it's a string error
-            if (returndata.length >= 68 && bytes4(returndata) == bytes4(keccak256("Error(string)"))) {
-                assembly {
-                    returndata := add(returndata, 0x04)
-                }
-                string memory reason = abi.decode(returndata, (string));
-                console.log("Revert reason:", reason);
-            } else {
-                console.log("Revert data (possibly custom error):");
-                console.logBytes(returndata);
-            }
-        } else {
-            console.log("Revert without data");
-        }
-
-        // Original expectation
-        vm.expectRevert("Initializable: contract is already initialized");
-        w.initialize(address(w.priceCalculator()), 100, 1, 10, 10 minutes, 4 minutes);
+        assertEq(
+            after_.gracePeriodDurationForNewMemberships,
+            before_.gracePeriodDurationForNewMemberships,
+            "gracePeriod changed"
+        );
+        assertEq(after_.MAX_MEMBERSHIP_SET_SIZE, before_.MAX_MEMBERSHIP_SET_SIZE, "MAX_MEMBERSHIP_SET_SIZE changed");
+        assertEq(after_.deployedBlockNumber, before_.deployedBlockNumber, "deployedBlockNumber changed");
+        assertEq(after_.nextFreeIndex, before_.nextFreeIndex, "nextFreeIndex changed");
+        assertEq(after_.currentTotalRateLimit, before_.currentTotalRateLimit, "currentTotalRateLimit changed");
+        assertEq(after_.merkleRoot, before_.merkleRoot, "merkle root changed");
     }
 }
