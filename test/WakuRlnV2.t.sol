@@ -1365,4 +1365,27 @@ contract WakuRlnV2Test is Test {
         assertEq(after_.currentTotalRateLimit, before_.currentTotalRateLimit, "currentTotalRateLimit changed");
         assertEq(after_.merkleRoot, before_.merkleRoot, "merkle root changed");
     }
+
+    function test__PriceCalculatorReconfiguration() external {
+        LinearPriceCalculator newCalc = new LinearPriceCalculator(address(token), 10 wei); // Different price
+
+        // Non-owner
+        vm.prank(vm.addr(1));
+        vm.expectRevert("Ownable: caller is not the owner");
+        w.setPriceCalculator(address(newCalc));
+
+        // Owner
+        vm.prank(w.owner());
+        w.setPriceCalculator(address(newCalc));
+
+        assertEq(address(w.priceCalculator()), address(newCalc));
+
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 newPrice) = w.priceCalculator().calculate(rateLimit);
+        assertEq(newPrice, uint256(rateLimit) * 10 wei);
+
+        token.approve(address(w), newPrice);
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+        assertEq(token.balanceOf(address(w)), newPrice);
+    }
 }
