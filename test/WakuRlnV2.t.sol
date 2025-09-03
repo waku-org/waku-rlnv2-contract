@@ -83,6 +83,20 @@ contract MaliciousToken is TestStableToken {
     }
 }
 
+contract MockPriceCalculator is IPriceCalculator {
+    address public token;
+    uint256 public price;
+
+    constructor(address _token, uint256 _price) {
+        token = _token;
+        price = _price;
+    }
+
+    function calculate(uint32 _rateLimit) external view returns (address, uint256) {
+        return (token, price);
+    }
+}
+
 contract WakuRlnV2Test is Test {
     WakuRlnV2 internal w;
     TestStableToken internal token;
@@ -1387,5 +1401,28 @@ contract WakuRlnV2Test is Test {
         token.approve(address(w), newPrice);
         w.register(1, rateLimit, noIdCommitmentsToErase);
         assertEq(token.balanceOf(address(w)), newPrice);
+    }
+
+    function test__ZeroPriceEdgeCase() external {
+        MockPriceCalculator zeroPriceCalc = new MockPriceCalculator(address(token), 0);
+
+        vm.prank(w.owner());
+        w.setPriceCalculator(address(zeroPriceCalc));
+
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+        assertEq(price, 0);
+
+        // No approval needed since price=0
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+
+        (,,,, uint32 fetchedRateLimit, uint32 index,,) = w.memberships(1);
+        assertEq(fetchedRateLimit, rateLimit);
+        assertEq(index, 0);
+        assertEq(
+            w.root(),
+            13_301_394_660_502_635_912_556_179_583_660_948_983_063_063_326_359_792_688_871_878_654_796_186_320_104
+        ); // expected root after insert
+        assertEq(token.balanceOf(address(w)), 0); // No transfer
     }
 }
