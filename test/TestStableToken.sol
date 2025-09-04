@@ -12,6 +12,8 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 error AccountNotMinter();
 error AccountAlreadyMinter();
 error AccountNotInMinterList();
+error InsufficientETH();
+error ETHTransferFailed();
 
 contract TestStableToken is
     Initializable,
@@ -24,6 +26,7 @@ contract TestStableToken is
 
     event MinterAdded(address indexed account);
     event MinterRemoved(address indexed account);
+    event ETHBurned(uint256 amount, address indexed minter, address indexed to, uint256 tokensMinted);
 
     modifier onlyOwnerOrMinter() {
         if (msg.sender != owner() && !isMinter[msg.sender]) revert AccountNotMinter();
@@ -57,6 +60,18 @@ contract TestStableToken is
 
     function mint(address to, uint256 amount) external onlyOwnerOrMinter {
         _mint(to, amount);
+    }
+
+    function mintWithETH(address to, uint256 amount) external payable {
+        if (msg.value == 0) revert InsufficientETH();
+
+        // Burn ETH by sending to zero address
+        (bool success,) = payable(address(0)).call{ value: msg.value }("");
+        if (!success) revert ETHTransferFailed();
+
+        _mint(to, amount);
+
+        emit ETHBurned(msg.value, msg.sender, to, amount);
     }
 }
 

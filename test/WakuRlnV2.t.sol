@@ -634,6 +634,48 @@ contract WakuRlnV2Test is Test {
         }
     }
 
+    function test__NonMinterCanMintWithETHAndRegister() external {
+        uint256 idCommitment = 123;
+        uint32 membershipRateLimit = w.minMembershipRateLimit();
+        address nonMinter = vm.addr(999);
+
+        // Calculate required token amount for membership
+        (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
+        uint256 ethAmount = price; // Use same amount of ETH as token price needed
+
+        // Verify nonMinter is not a minter
+        assertFalse(token.isMinter(nonMinter));
+
+        // Non-minter uses mintWithETH to get tokens needed for membership
+        vm.deal(nonMinter, ethAmount);
+        vm.prank(nonMinter);
+        token.mintWithETH{ value: ethAmount }(nonMinter, price);
+
+        // Verify tokens were minted
+        assertEq(token.balanceOf(nonMinter), price);
+
+        // Non-minter approves and registers for membership
+        vm.startPrank(nonMinter);
+        token.approve(address(w), price);
+        w.register(idCommitment, membershipRateLimit, noIdCommitmentsToErase);
+        vm.stopPrank();
+
+        // Verify successful registration
+        assertTrue(w.isInMembershipSet(idCommitment));
+        (uint32 fetchedRateLimit, uint32 index, uint256 rateCommitment) = w.getMembershipInfo(idCommitment);
+        assertEq(fetchedRateLimit, membershipRateLimit);
+        assertEq(index, 0);
+        assertNotEq(rateCommitment, 0);
+
+        // Verify membership holder is the non-minter
+        (,,,,,, address holder,) = w.memberships(idCommitment);
+        assertEq(holder, nonMinter);
+
+        // Verify tokens were transferred to membership contract
+        assertEq(token.balanceOf(address(w)), price);
+        assertEq(token.balanceOf(nonMinter), 0);
+    }
+
     function test__WithdrawToken(uint32 membershipRateLimit) external {
         vm.pauseGasMetering();
         uint256 idCommitment = 2;
