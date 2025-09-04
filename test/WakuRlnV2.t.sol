@@ -128,7 +128,8 @@ contract WakuRlnV2Test is Test {
             console.log("Failed to transfer ownership");
         }
 
-        // Mint tokens
+        // Minting a large number of tokens to not have to worry about
+        // Not having enough balance
         vm.prank(address(tokenDeployer));
         token.mint(address(this), 100_000_000 ether);
     }
