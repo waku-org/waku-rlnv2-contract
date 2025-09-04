@@ -3,7 +3,6 @@ pragma solidity >=0.8.19 <0.9.0;
 
 import "../src/Membership.sol";
 import "../src/WakuRlnV2.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "forge-std/console.sol"; // solhint-disable-line
 import "forge-std/Vm.sol";
 import { DeployPriceCalculator, DeployWakuRlnV2, DeployProxy } from "../script/Deploy.s.sol"; // solhint-disable-line
