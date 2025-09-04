@@ -93,7 +93,7 @@ contract MockPriceCalculator is IPriceCalculator {
     }
 
     function calculate(uint32 _rateLimit) external view returns (address, uint256) {
-        return (token, price);
+        return (token, uint256(_rateLimit) * price);
     }
 }
 
