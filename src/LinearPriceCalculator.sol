@@ -15,7 +15,7 @@ contract LinearPriceCalculator is IPriceCalculator, Ownable {
     /// @notice The price per message per epoch
     uint256 public pricePerMessagePerEpoch;
 
-    constructor(address _token, uint256 _pricePerMessagePerEpoch) Ownable() {
+    constructor(address _token, uint256 _pricePerMessagePerEpoch) {
         _setTokenAndPrice(_token, _pricePerMessagePerEpoch);
     }
 
