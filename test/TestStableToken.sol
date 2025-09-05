@@ -13,7 +13,6 @@ error AccountNotMinter();
 error AccountAlreadyMinter();
 error AccountNotInMinterList();
 error InsufficientETH();
-error ETHTransferFailed();
 
 contract TestStableToken is
     Initializable,
@@ -66,8 +65,7 @@ contract TestStableToken is
         if (msg.value == 0) revert InsufficientETH();
 
         // Burn ETH by sending to zero address
-        (bool success,) = payable(address(0)).call{ value: msg.value }("");
-        if (!success) revert ETHTransferFailed();
+        payable(address(0)).transfer(msg.value);
 
         _mint(to, amount);
 
