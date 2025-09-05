@@ -60,9 +60,21 @@ cast send $TOKEN_PROXY_ADDRESS "addMinter(address)" $ACCOUNT_ADDRESS --rpc-url $
 
 ### Mint tokens to the account
 
+#### Option 1: Restricted minting (requires minter privileges)
+
 ```bash
 cast send $TOKEN_PROXY_ADDRESS "mint(address,uint256)" <TO_ADDRESS> <AMOUNT> --rpc-url $RPC_URL --private-key $MINTER_ACCOUNT_PRIVATE_KEY
 ```
+
+#### Option 2: Public minting by burning ETH (no privileges required)
+
+```bash
+cast send $TOKEN_PROXY_ADDRESS "mintWithETH(address,uint256)" <TO_ACCOUNT> <AMOUNT> --value <ETH_AMOUNT> --rpc-url $RPC_URL --private-key $MINTING_ACCOUNT_PRIVATE_KEY --from $MINTING_ACCOUNT_ADDRESS
+```
+
+**Note**: The `mintWithETH` function is public and can be called by anyone. It requires sending ETH with the transaction
+(using `--value`), which gets burned (sent to address(0)) as an economic cost for minting tokens. This provides a
+permissionless way to obtain tokens for testing without requiring minter privileges.
 
 ### Approve the token for the waku-rlnv2-contract to use
 
