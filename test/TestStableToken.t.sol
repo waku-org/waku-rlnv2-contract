@@ -20,6 +20,10 @@ contract TestStableTokenTest is Test {
     address internal user2;
     address internal nonMinter;
 
+    event MinterAdded(address indexed account);
+    event MinterRemoved(address indexed account);
+    event ETHBurned(uint256 amount, address indexed minter, address indexed to, uint256 tokensMinted);
+
     function setUp() public {
         // Deploy using the deployment script
         deployer = new DeployTokenWithProxy();
@@ -182,11 +186,6 @@ contract TestStableTokenTest is Test {
         token.removeMinter(user1);
     }
 
-    event MinterAdded(address indexed account);
-    event MinterRemoved(address indexed account);
-    event ETHBurned(uint256 amount, address indexed minter, address indexed to, uint256 tokensMinted);
-
-    // New tests for ETH burning functionality
     function test__MintRequiresETH() external {
         uint256 mintAmount = 1000 ether;
 
