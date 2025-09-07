@@ -1225,7 +1225,7 @@ contract WakuRlnV2Test is Test {
         uint32 graceDur = 5;
 
         // 3) Second initialization must revert (use a loose matcher for OZ v4/v5 compatibility)
-        vm.expectRevert();
+        vm.expectRevert("Initializable: contract is already initialized");
         w.initialize(calc, maxTotal, minRate, maxRate, activeDur, graceDur);
 
         // 4) Snapshot after and compare
