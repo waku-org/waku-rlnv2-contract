@@ -87,14 +87,6 @@ contract WakuRlnV2Test is Test {
         // Log owner for debugging
         console.log("WakuRlnV2 owner: ", w.owner());
 
-        // Transfer ownership to address(this)
-        vm.prank(w.owner());
-        try w.transferOwnership(address(this)) {
-            console.log("Ownership transferred to: ", w.owner());
-        } catch {
-            console.log("Failed to transfer ownership");
-        }
-
         // Minting a large number of tokens to not have to worry about
         // Not having enough balance
         vm.prank(address(tokenDeployer));
@@ -1127,16 +1119,18 @@ contract WakuRlnV2Test is Test {
 
         // Deploy proxy with no reentrancy (enables failTransfer)
         ERC1967Proxy proxy =
-            new ERC1967Proxy(address(maliciousTokenImpl),
-                abi.encodeCall(MaliciousToken.initialize, (address(0), true)));
+            new ERC1967Proxy(address(maliciousTokenImpl), abi.encodeCall(MaliciousToken.initialize, (address(0), true)));
         MaliciousToken maliciousToken = MaliciousToken(address(proxy));
 
         // Mint tokens
         maliciousToken.mint(address(this), 100_000_000 ether);
 
-        // Set price calculator
+        // Compute new calculator before prank
+        address newCalc = address(new DeployPriceCalculator().deploy(address(maliciousToken)));
+
+        // Set price calculator using the actual owner
         vm.prank(w.owner());
-        w.setPriceCalculator(address(new DeployPriceCalculator().deploy(address(maliciousToken))));
+        w.setPriceCalculator(newCalc);
 
         uint32 rateLimit = w.minMembershipRateLimit();
         (, uint256 price) = w.priceCalculator().calculate(rateLimit);
