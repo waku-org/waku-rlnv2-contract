@@ -1127,7 +1127,8 @@ contract WakuRlnV2Test is Test {
 
         // Deploy proxy with no reentrancy (enables failTransfer)
         ERC1967Proxy proxy =
-            new ERC1967Proxy(address(maliciousTokenImpl), abi.encodeCall(MaliciousToken.initialize, (address(0), true)));
+            new ERC1967Proxy(address(maliciousTokenImpl),
+                abi.encodeCall(MaliciousToken.initialize, (address(0), true)));
         MaliciousToken maliciousToken = MaliciousToken(address(proxy));
 
         // Mint tokens
