@@ -18,29 +18,12 @@ import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils
 
 contract MaliciousToken is TestStableToken {
     address public target;
-    bytes public calldataToReenter;
     bool public failTransferEnabled;
 
-    function initialize(
-        address _reentrancyTarget,
-        bytes memory _reentrancyCalldata,
-        bool _failTransferEnabled
-    )
-        public
-        initializer
-    {
+    function initialize(address _target, bool _failTransferEnabled) public initializer {
         super.initialize();
-        target = _reentrancyTarget;
-        calldataToReenter = _reentrancyCalldata;
-        failTransferEnabled = _failTransferEnabled;
-    }
-
-    function setReentrancyTarget(address _target) external onlyOwner {
         target = _target;
-    }
-
-    function setCalldataToReenter(bytes memory _calldata) external onlyOwner {
-        calldataToReenter = _calldata;
+        failTransferEnabled = _failTransferEnabled;
     }
 
     function setFailTransferEnabled(bool _enabled) external onlyOwner {
@@ -51,28 +34,12 @@ contract MaliciousToken is TestStableToken {
         if (failTransferEnabled) {
             revert("Malicious transfer failure");
         }
-        if (target != address(0)) {
-            (bool success, bytes memory data) = target.call(calldataToReenter);
-            if (!success) {
-                assembly {
-                    revert(add(data, 0x20), mload(data))
-                }
-            }
-        }
         return super.transferFrom(from, to, amount);
     }
 
     function transfer(address to, uint256 amount) public override returns (bool) {
         if (failTransferEnabled) {
             revert("Malicious transfer failure");
-        }
-        if (target != address(0)) {
-            (bool success, bytes memory data) = target.call(calldataToReenter);
-            if (!success) {
-                assembly {
-                    revert(add(data, 0x20), mload(data))
-                }
-            }
         }
         return super.transfer(to, amount);
     }
@@ -1159,9 +1126,8 @@ contract WakuRlnV2Test is Test {
         MaliciousToken maliciousTokenImpl = new MaliciousToken();
 
         // Deploy proxy with no reentrancy (enables failTransfer)
-        ERC1967Proxy proxy = new ERC1967Proxy(
-            address(maliciousTokenImpl), abi.encodeCall(MaliciousToken.initialize, (address(0), "", true))
-        );
+        ERC1967Proxy proxy =
+            new ERC1967Proxy(address(maliciousTokenImpl), abi.encodeCall(MaliciousToken.initialize, (address(0), true)));
         MaliciousToken maliciousToken = MaliciousToken(address(proxy));
 
         // Mint tokens
