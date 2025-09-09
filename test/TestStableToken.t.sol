@@ -288,13 +288,13 @@ contract TestStableTokenTest is Test {
 
     function test__MaxSupplyIsSetCorrectly() external {
         // maxSupply should be set to 1000000 * 10^18 by deployment script
-        uint256 expectedMaxSupply = 1000000 * 10 ** 18;
+        uint256 expectedMaxSupply = 1_000_000 * 10 ** 18;
         assertEq(token.maxSupply(), expectedMaxSupply);
     }
 
     function test__CannotMintExceedingMaxSupply() external {
         uint256 currentMaxSupply = token.maxSupply();
-        
+
         // Try to mint more than maxSupply
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(ExceedsMaxSupply.selector));
@@ -304,7 +304,7 @@ contract TestStableTokenTest is Test {
     function test__CannotMintWithETHExceedingMaxSupply() external {
         uint256 currentMaxSupply = token.maxSupply();
         uint256 ethAmount = 1 ether;
-        
+
         // Try to mint more than maxSupply with ETH
         vm.deal(owner, ethAmount);
         vm.prank(owner);
@@ -313,15 +313,15 @@ contract TestStableTokenTest is Test {
     }
 
     function test__OwnerCanSetMaxSupply() external {
-        uint256 newMaxSupply = 2000000 * 10 ** 18;
+        uint256 newMaxSupply = 2_000_000 * 10 ** 18;
         uint256 oldMaxSupply = token.maxSupply();
-        
+
         vm.expectEmit(true, true, false, false);
         emit MaxSupplySet(oldMaxSupply, newMaxSupply);
-        
+
         vm.prank(owner);
         token.setMaxSupply(newMaxSupply);
-        
+
         assertEq(token.maxSupply(), newMaxSupply);
     }
 
@@ -330,7 +330,7 @@ contract TestStableTokenTest is Test {
         uint256 mintAmount = 1000 ether;
         vm.prank(owner);
         token.mint(user1, mintAmount);
-        
+
         // Try to set maxSupply below current totalSupply
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(ExceedsMaxSupply.selector));
@@ -338,8 +338,8 @@ contract TestStableTokenTest is Test {
     }
 
     function test__NonOwnerCannotSetMaxSupply() external {
-        uint256 newMaxSupply = 2000000 * 10 ** 18;
-        
+        uint256 newMaxSupply = 2_000_000 * 10 ** 18;
+
         vm.prank(user1);
         vm.expectRevert("Ownable: caller is not the owner");
         token.setMaxSupply(newMaxSupply);

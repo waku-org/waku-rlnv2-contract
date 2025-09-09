@@ -44,7 +44,7 @@ contract TestStableToken is
         __ERC20Permit_init("TestStableToken");
         __Ownable_init();
         __UUPSUpgradeable_init();
-        
+
         maxSupply = _maxSupply;
     }
 
@@ -81,10 +81,10 @@ contract TestStableToken is
 
     function setMaxSupply(uint256 _maxSupply) external onlyOwner {
         if (_maxSupply < totalSupply()) revert ExceedsMaxSupply();
-        
+
         uint256 oldMaxSupply = maxSupply;
         maxSupply = _maxSupply;
-        
+
         emit MaxSupplySet(oldMaxSupply, _maxSupply);
     }
 }
