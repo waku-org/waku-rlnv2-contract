@@ -39,7 +39,7 @@ contract WakuRlnV2Test is Test {
         // Minting a large number of tokens to not have to worry about
         // Not having enough balance
         vm.prank(address(tokenDeployer));
-        token.mint(address(this), 100_000_000 ether);
+        token.mint(address(this), 900_000 ether);
     }
 
     function test__ValidRegistration__kats() external {

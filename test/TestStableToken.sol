@@ -13,6 +13,7 @@ error AccountNotMinter();
 error AccountAlreadyMinter();
 error AccountNotInMinterList();
 error InsufficientETH();
+error ExceedsMaxSupply();
 
 contract TestStableToken is
     Initializable,
@@ -22,10 +23,12 @@ contract TestStableToken is
     UUPSUpgradeable
 {
     mapping(address => bool) public isMinter;
+    uint256 public maxSupply;
 
     event MinterAdded(address indexed account);
     event MinterRemoved(address indexed account);
     event ETHBurned(uint256 amount, address indexed minter, address indexed to, uint256 tokensMinted);
+    event MaxSupplySet(uint256 oldMaxSupply, uint256 newMaxSupply);
 
     modifier onlyOwnerOrMinter() {
         if (msg.sender != owner() && !isMinter[msg.sender]) revert AccountNotMinter();
@@ -36,11 +39,13 @@ contract TestStableToken is
         _disableInitializers();
     }
 
-    function initialize() public initializer {
+    function initialize(uint256 _maxSupply) public initializer {
         __ERC20_init("TestStableToken", "TST");
         __ERC20Permit_init("TestStableToken");
         __Ownable_init();
         __UUPSUpgradeable_init();
+        
+        maxSupply = _maxSupply;
     }
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner { }
@@ -58,11 +63,13 @@ contract TestStableToken is
     }
 
     function mint(address to, uint256 amount) external onlyOwnerOrMinter {
+        if (totalSupply() + amount > maxSupply) revert ExceedsMaxSupply();
         _mint(to, amount);
     }
 
     function mintWithETH(address to, uint256 amount) external payable {
         if (msg.value == 0) revert InsufficientETH();
+        if (totalSupply() + amount > maxSupply) revert ExceedsMaxSupply();
 
         // Burn ETH by sending to zero address
         payable(address(0)).transfer(msg.value);
@@ -70,6 +77,15 @@ contract TestStableToken is
         _mint(to, amount);
 
         emit ETHBurned(msg.value, msg.sender, to, amount);
+    }
+
+    function setMaxSupply(uint256 _maxSupply) external onlyOwner {
+        if (_maxSupply < totalSupply()) revert ExceedsMaxSupply();
+        
+        uint256 oldMaxSupply = maxSupply;
+        maxSupply = _maxSupply;
+        
+        emit MaxSupplySet(oldMaxSupply, _maxSupply);
     }
 }
 
