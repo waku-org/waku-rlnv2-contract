@@ -67,16 +67,16 @@ contract TestStableToken is
         _mint(to, amount);
     }
 
-    function mintWithETH(address to, uint256 amount) external payable {
+    function mintWithETH(address to) external payable {
         if (msg.value == 0) revert InsufficientETH();
-        if (totalSupply() + amount > maxSupply) revert ExceedsMaxSupply();
+        if (totalSupply() + msg.value > maxSupply) revert ExceedsMaxSupply();
 
         // Burn ETH by sending to zero address
         payable(address(0)).transfer(msg.value);
 
-        _mint(to, amount);
+        _mint(to, msg.value);
 
-        emit ETHBurned(msg.value, msg.sender, to, amount);
+        emit ETHBurned(msg.value, msg.sender, to, msg.value);
     }
 
     function setMaxSupply(uint256 _maxSupply) external onlyOwner {

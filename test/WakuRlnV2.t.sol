@@ -647,9 +647,10 @@ contract WakuRlnV2Test is Test {
         assertFalse(token.isMinter(nonMinter));
 
         // Non-minter uses mintWithETH to get tokens needed for membership
-        vm.deal(nonMinter, ethAmount);
+        // Need to send enough ETH to mint the required tokens (1:1 ratio)
+        vm.deal(nonMinter, price);
         vm.prank(nonMinter);
-        token.mintWithETH{ value: ethAmount }(nonMinter, price);
+        token.mintWithETH{ value: price }(nonMinter);
 
         // Verify tokens were minted
         assertEq(token.balanceOf(nonMinter), price);

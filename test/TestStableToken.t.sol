@@ -189,46 +189,41 @@ contract TestStableTokenTest is Test {
     }
 
     function test__MintRequiresETH() external {
-        uint256 mintAmount = 1000 ether;
-
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(InsufficientETH.selector));
-        token.mintWithETH(user1, mintAmount);
+        token.mintWithETH(user1);
     }
 
     function test__ERC20BasicFunctionality() external {
-        uint256 mintAmount = 1000 ether;
         uint256 ethAmount = 0.1 ether;
 
         vm.deal(user1, ethAmount);
         vm.prank(user1);
-        token.mintWithETH{ value: ethAmount }(user2, mintAmount);
+        token.mintWithETH{ value: ethAmount }(user2);
 
-        assertEq(token.balanceOf(user2), mintAmount);
-        assertEq(token.totalSupply(), mintAmount);
+        assertEq(token.balanceOf(user2), ethAmount);
+        assertEq(token.totalSupply(), ethAmount);
 
         vm.prank(user2);
-        assertTrue(token.transfer(owner, 200 ether));
+        assertTrue(token.transfer(owner, 0.05 ether));
 
-        assertEq(token.balanceOf(user2), 800 ether);
-        assertEq(token.balanceOf(owner), 200 ether);
+        assertEq(token.balanceOf(user2), 0.05 ether);
+        assertEq(token.balanceOf(owner), 0.05 ether);
     }
 
     function test__ETHBurnedEventEmitted() external {
-        uint256 mintAmount = 1000 ether;
         uint256 ethAmount = 0.1 ether;
 
         vm.deal(owner, ethAmount);
 
         vm.expectEmit(true, true, true, true);
-        emit ETHBurned(ethAmount, owner, user1, mintAmount);
+        emit ETHBurned(ethAmount, owner, user1, ethAmount);
 
         vm.prank(owner);
-        token.mintWithETH{ value: ethAmount }(user1, mintAmount);
+        token.mintWithETH{ value: ethAmount }(user1);
     }
 
     function test__ETHIsBurnedToZeroAddress() external {
-        uint256 mintAmount = 1000 ether;
         uint256 ethAmount = 0.1 ether;
         address zeroAddress = address(0);
 
@@ -236,28 +231,26 @@ contract TestStableTokenTest is Test {
 
         vm.deal(owner, ethAmount);
         vm.prank(owner);
-        token.mintWithETH{ value: ethAmount }(user1, mintAmount);
+        token.mintWithETH{ value: ethAmount }(user1);
 
         // ETH should be burned to zero address
         assertEq(zeroAddress.balance, zeroBalanceBefore + ethAmount);
     }
 
     function test__ContractDoesNotHoldETHAfterMint() external {
-        uint256 mintAmount = 1000 ether;
         uint256 ethAmount = 0.1 ether;
 
         uint256 contractBalanceBefore = address(token).balance;
 
         vm.deal(owner, ethAmount);
         vm.prank(owner);
-        token.mintWithETH{ value: ethAmount }(user1, mintAmount);
+        token.mintWithETH{ value: ethAmount }(user1);
 
         // Contract should not hold any ETH after mint
         assertEq(address(token).balance, contractBalanceBefore);
     }
 
     function test__MintWithDifferentETHAmounts() external {
-        uint256 mintAmount = 1000 ether;
         uint256[] memory ethAmounts = new uint256[](3);
         ethAmounts[0] = 0.01 ether;
         ethAmounts[1] = 1 ether;
@@ -268,22 +261,20 @@ contract TestStableTokenTest is Test {
             vm.deal(owner, ethAmounts[i]);
 
             vm.expectEmit(true, true, true, true);
-            emit ETHBurned(ethAmounts[i], owner, user, mintAmount);
+            emit ETHBurned(ethAmounts[i], owner, user, ethAmounts[i]);
 
             vm.prank(owner);
-            token.mintWithETH{ value: ethAmounts[i] }(user, mintAmount);
+            token.mintWithETH{ value: ethAmounts[i] }(user);
 
-            assertEq(token.balanceOf(user), mintAmount);
+            assertEq(token.balanceOf(user), ethAmounts[i]);
         }
     }
 
     function test__CannotMintWithZeroETH() external {
-        uint256 mintAmount = 1000 ether;
-
         // Anyone can call mintWithETH (public function), but it requires ETH
         vm.prank(user1);
         vm.expectRevert(abi.encodeWithSelector(InsufficientETH.selector));
-        token.mintWithETH{ value: 0 }(user2, mintAmount);
+        token.mintWithETH{ value: 0 }(user2);
     }
 
     function test__MaxSupplyIsSetCorrectly() external {
@@ -303,13 +294,14 @@ contract TestStableTokenTest is Test {
 
     function test__CannotMintWithETHExceedingMaxSupply() external {
         uint256 currentMaxSupply = token.maxSupply();
-        uint256 ethAmount = 1 ether;
+        // Send an amount of ETH that would exceed maxSupply when minted as tokens
+        uint256 ethAmount = currentMaxSupply + 1;
 
         // Try to mint more than maxSupply with ETH
         vm.deal(owner, ethAmount);
         vm.prank(owner);
         vm.expectRevert(abi.encodeWithSelector(ExceedsMaxSupply.selector));
-        token.mintWithETH{ value: ethAmount }(user1, currentMaxSupply + 1);
+        token.mintWithETH{ value: ethAmount }(user1);
     }
 
     function test__OwnerCanSetMaxSupply() external {
