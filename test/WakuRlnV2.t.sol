@@ -38,6 +38,7 @@ contract WakuRlnV2Test is Test {
 
         // Minting a large number of tokens to not have to worry about
         // Not having enough balance
+        // 900_000 ether is chosen to be well above any test requirements and is within the new max supply constraints.
         vm.prank(address(tokenDeployer));
         token.mint(address(this), 900_000 ether);
     }
