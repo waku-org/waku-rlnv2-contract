@@ -8,7 +8,7 @@ import {
     AccountAlreadyMinter,
     AccountNotInMinterList,
     InsufficientETH,
-    ExceedsMaxSupply
+    ExceedsCap
 } from "./TestStableToken.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { DeployTokenWithProxy } from "../script/DeployTokenWithProxy.s.sol";
@@ -24,7 +24,7 @@ contract TestStableTokenTest is Test {
     event MinterAdded(address indexed account);
     event MinterRemoved(address indexed account);
     event ETHBurned(uint256 amount, address indexed minter, address indexed to, uint256 tokensMinted);
-    event MaxSupplySet(uint256 oldMaxSupply, uint256 newMaxSupply);
+    event CapSet(uint256 oldCap, uint256 newCap);
 
     function setUp() public {
         // Deploy using the deployment script
@@ -280,41 +280,41 @@ contract TestStableTokenTest is Test {
     function test__MaxSupplyIsSetCorrectly() external {
         // maxSupply should be set to 1000000 * 10^18 by deployment script
         uint256 expectedMaxSupply = 1_000_000 * 10 ** 18;
-        assertEq(token.maxSupply(), expectedMaxSupply);
+        assertEq(token.cap(), expectedMaxSupply);
     }
 
     function test__CannotMintExceedingMaxSupply() external {
-        uint256 currentMaxSupply = token.maxSupply();
+        uint256 currentMaxSupply = token.cap();
 
         // Try to mint more than maxSupply
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(ExceedsMaxSupply.selector));
+        vm.expectRevert(abi.encodeWithSelector(ExceedsCap.selector));
         token.mint(user1, currentMaxSupply + 1);
     }
 
     function test__CannotMintWithETHExceedingMaxSupply() external {
-        uint256 currentMaxSupply = token.maxSupply();
+        uint256 currentMaxSupply = token.cap();
         // Send an amount of ETH that would exceed maxSupply when minted as tokens
         uint256 ethAmount = currentMaxSupply + 1;
 
         // Try to mint more than maxSupply with ETH
         vm.deal(owner, ethAmount);
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(ExceedsMaxSupply.selector));
+        vm.expectRevert(abi.encodeWithSelector(ExceedsCap.selector));
         token.mintWithETH{ value: ethAmount }(user1);
     }
 
     function test__OwnerCanSetMaxSupply() external {
         uint256 newMaxSupply = 2_000_000 * 10 ** 18;
-        uint256 oldMaxSupply = token.maxSupply();
+        uint256 oldMaxSupply = token.cap();
 
         vm.expectEmit(true, true, false, false);
-        emit MaxSupplySet(oldMaxSupply, newMaxSupply);
+        emit CapSet(oldMaxSupply, newMaxSupply);
 
         vm.prank(owner);
-        token.setMaxSupply(newMaxSupply);
+        token.setCap(newMaxSupply);
 
-        assertEq(token.maxSupply(), newMaxSupply);
+        assertEq(token.cap(), newMaxSupply);
     }
 
     function test__CannotSetMaxSupplyBelowTotalSupply() external {
@@ -325,8 +325,8 @@ contract TestStableTokenTest is Test {
 
         // Try to set maxSupply below current totalSupply
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(ExceedsMaxSupply.selector));
-        token.setMaxSupply(mintAmount - 1);
+        vm.expectRevert(abi.encodeWithSelector(ExceedsCap.selector));
+        token.setCap(mintAmount - 1);
     }
 
     function test__NonOwnerCannotSetMaxSupply() external {
@@ -334,6 +334,6 @@ contract TestStableTokenTest is Test {
 
         vm.prank(user1);
         vm.expectRevert("Ownable: caller is not the owner");
-        token.setMaxSupply(newMaxSupply);
+        token.setCap(newMaxSupply);
     }
 }
