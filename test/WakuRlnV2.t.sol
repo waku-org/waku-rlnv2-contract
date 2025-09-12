@@ -1,19 +1,67 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity >=0.8.19 <0.9.0;
 
-import { Test } from "forge-std/Test.sol";
-import { DeployPriceCalculator, DeployWakuRlnV2, DeployProxy } from "../script/Deploy.s.sol";
+import "../src/Membership.sol";
+import "../src/WakuRlnV2.sol";
+import "forge-std/console.sol"; // solhint-disable-line
+import "forge-std/Vm.sol";
+import { DeployPriceCalculator, DeployWakuRlnV2, DeployProxy } from "../script/Deploy.s.sol"; // solhint-disable-line
 import { DeployTokenWithProxy } from "../script/DeployTokenWithProxy.s.sol";
-import "../src/WakuRlnV2.sol"; // solhint-disable-line
-import "../src/Membership.sol"; // solhint-disable-line
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { IPriceCalculator } from "../src/IPriceCalculator.sol";
 import { LinearPriceCalculator } from "../src/LinearPriceCalculator.sol";
-import { TestStableToken } from "./TestStableToken.sol";
 import { PoseidonT3 } from "poseidon-solidity/PoseidonT3.sol";
+import { Test } from "forge-std/Test.sol"; // For signature manipulation
+import { TestStableToken } from "./TestStableToken.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol"; // For signature manipulation
-import "forge-std/console.sol";
+
+contract MaliciousToken is TestStableToken {
+    address public target;
+    bool public failTransferEnabled;
+
+    function initialize(address _target, bool _failTransferEnabled) public initializer {
+        super.initialize();
+        target = _target;
+        failTransferEnabled = _failTransferEnabled;
+    }
+
+    function setFailTransferEnabled(bool _enabled) external onlyOwner {
+        failTransferEnabled = _enabled;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        if (failTransferEnabled) {
+            revert("Malicious transfer failure");
+        }
+        return super.transferFrom(from, to, amount);
+    }
+
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        if (failTransferEnabled) {
+            revert("Malicious transfer failure");
+        }
+        return super.transfer(to, amount);
+    }
+
+    function failTransfer() external pure {
+        revert("Malicious transfer failure");
+    }
+}
+
+contract MockPriceCalculator is IPriceCalculator {
+    address public token;
+    uint256 public price;
+
+    constructor(address _token, uint256 _price) {
+        token = _token;
+        price = _price;
+    }
+
+    function calculate(uint32 _rateLimit) external view returns (address, uint256) {
+        return (token, uint256(_rateLimit) * price);
+    }
+}
 
 contract WakuRlnV2Test is Test {
     WakuRlnV2 internal w;
@@ -35,6 +83,9 @@ contract WakuRlnV2Test is Test {
         ERC1967Proxy proxy = (new DeployProxy()).deploy(address(priceCalculator), address(wakuRlnV2));
 
         w = WakuRlnV2(address(proxy));
+
+        // Log owner for debugging
+        console.log("WakuRlnV2 owner: ", w.owner());
 
         // Minting a large number of tokens to not have to worry about
         // Not having enough balance
@@ -832,5 +883,423 @@ contract WakuRlnV2Test is Test {
             )
         );
         assertEq(fetchedImpl, newImpl);
+    }
+
+    function test__ErasingNonExistentMembership() external {
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 999; // Non-existent
+        assertFalse(w.isInMembershipSet(999), "ID should not exist");
+        uint256 initialRoot = w.root();
+        uint256 initialNextFreeIndex = w.nextFreeIndex();
+
+        vm.expectRevert(abi.encodeWithSelector(MembershipDoesNotExist.selector, 999));
+        w.eraseMemberships(ids);
+
+        assertEq(w.root(), initialRoot, "Merkle root should not change");
+        assertEq(w.nextFreeIndex(), initialNextFreeIndex, "Next free index should not change");
+    }
+
+    function test__GracePeriodExtensionEdgeCases() external {
+        uint256 idCommitment = 1;
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        token.approve(address(w), price);
+        w.register(idCommitment, rateLimit, noIdCommitmentsToErase);
+
+        // Destructure the memberships mapping tuple, skipping unused fields
+        (
+            , // depositAmount
+            uint32 activeDuration,
+            uint256 gracePeriodStart,
+            uint32 gracePeriodDuration,
+            uint32 rateLimitFetched,
+            uint32 indexFetched,
+            address holderFetched,
+            // tokenFetched
+        ) = w.memberships(idCommitment);
+        assertEq(rateLimitFetched, rateLimit);
+        assertEq(holderFetched, address(this));
+        assertEq(indexFetched, 0);
+
+        // Before grace period (still active)
+        vm.warp(gracePeriodStart - 1);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = idCommitment;
+        vm.expectRevert(abi.encodeWithSelector(CannotExtendNonGracePeriodMembership.selector, idCommitment));
+        w.extendMemberships(ids);
+
+        // At start of grace period
+        vm.warp(gracePeriodStart);
+        assertTrue(w.isInGracePeriod(idCommitment));
+        vm.expectEmit(true, true, true, true);
+        emit MembershipUpgradeable.MembershipExtended(
+            idCommitment, rateLimit, 0, gracePeriodStart + gracePeriodDuration + activeDuration
+        );
+        w.extendMemberships(ids);
+
+        // Verify updated grace period start
+        (,, uint256 newGracePeriodStart,,,,,) = w.memberships(idCommitment);
+        assertEq(newGracePeriodStart, gracePeriodStart + gracePeriodDuration + activeDuration);
+
+        // Non-holder attempt
+        vm.warp(newGracePeriodStart);
+        vm.prank(vm.addr(1));
+        vm.expectRevert(abi.encodeWithSelector(NonHolderCannotExtend.selector, idCommitment));
+        w.extendMemberships(ids);
+
+        // After grace period (expired)
+        vm.warp(newGracePeriodStart + gracePeriodDuration + 1);
+        vm.expectRevert(abi.encodeWithSelector(CannotExtendNonGracePeriodMembership.selector, idCommitment));
+        w.extendMemberships(ids);
+    }
+
+    function test__MaxTotalRateLimitEdgeCases() external {
+        vm.startPrank(w.owner());
+        w.setMinMembershipRateLimit(1); // Ensure minMembershipRateLimit <= 10
+        w.setMaxMembershipRateLimit(10); // Ensure maxMembershipRateLimit <= 100
+        w.setMaxTotalRateLimit(100);
+        vm.stopPrank();
+
+        uint32 minRateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(minRateLimit);
+
+        // Register until just below max
+        for (uint32 i = 1; i <= 99; i++) {
+            token.approve(address(w), price);
+            w.register(i, minRateLimit, noIdCommitmentsToErase);
+        }
+        assertEq(w.currentTotalRateLimit(), 99);
+
+        // Register to reach max
+        token.approve(address(w), price);
+        w.register(100, minRateLimit, noIdCommitmentsToErase);
+        assertEq(w.currentTotalRateLimit(), 100);
+
+        // Attempt to exceed
+        token.approve(address(w), price);
+        vm.expectRevert(CannotExceedMaxTotalRateLimit.selector);
+        w.register(101, minRateLimit, noIdCommitmentsToErase);
+
+        // Destructure memberships to get gracePeriodStartTimestamp and gracePeriodDuration
+        (
+            , // depositAmount
+            , // activeDuration
+            uint256 graceStart,
+            uint32 gracePeriodDuration,
+            , // rateLimit
+            , // index
+            , // holder
+                // token
+        ) = w.memberships(100);
+        vm.warp(graceStart + gracePeriodDuration + 1); // Expire one
+
+        uint256[] memory toErase = new uint256[](1);
+        toErase[0] = 100;
+        w.eraseMemberships(toErase);
+        assertEq(w.currentTotalRateLimit(), 99);
+
+        token.approve(address(w), price);
+        w.register(101, minRateLimit, noIdCommitmentsToErase);
+        assertEq(w.currentTotalRateLimit(), 100);
+    }
+
+    function test__MerkleTreeUpdateAfterErasureAndReuse() external {
+        uint256 idCommitment1 = 1;
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        token.approve(address(w), price);
+        w.register(idCommitment1, rateLimit, noIdCommitmentsToErase);
+
+        uint256 initialRoot = w.root();
+        uint256 rateCommitment1 = PoseidonT3.hash([idCommitment1, rateLimit]);
+        uint256[] memory commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, 0);
+        assertEq(commitments[0], rateCommitment1);
+
+        // Erase lazily
+        (
+            , // depositAmount
+            , // activeDuration
+            uint256 graceStart,
+            , // gracePeriodDuration
+            , // rateLimit
+            , // index
+            , // holder
+                // token
+        ) = w.memberships(idCommitment1);
+        vm.warp(graceStart);
+        uint256[] memory toErase = new uint256[](1);
+        toErase[0] = idCommitment1;
+        w.eraseMemberships(toErase, false); // Lazy
+
+        // Root unchanged since lazy
+        assertEq(w.root(), initialRoot);
+
+        // Reuse index 0 with new commitment
+        uint256 idCommitment2 = 2;
+        token.approve(address(w), price);
+        w.register(idCommitment2, rateLimit, noIdCommitmentsToErase);
+
+        uint256 rateCommitment2 = PoseidonT3.hash([idCommitment2, rateLimit]);
+        commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, 0);
+        assertEq(commitments[0], rateCommitment2);
+        assertNotEq(w.root(), initialRoot); // Root updated
+
+        // Verify proof
+        uint256[20] memory proof = w.getMerkleProof(0);
+        uint256 updatedRoot = w.root();
+        uint256 leaf = commitments[0];
+        uint256 computedRoot = leaf;
+        uint256 index = 0;
+        for (uint8 i = 0; i < 20; i++) {
+            uint256 sibling = proof[i];
+            if (index % 2 == 0) {
+                computedRoot = PoseidonT3.hash([computedRoot, sibling]);
+            } else {
+                computedRoot = PoseidonT3.hash([sibling, computedRoot]);
+            }
+            index >>= 1;
+        }
+        assertEq(computedRoot, updatedRoot);
+    }
+
+    function test__ZeroGracePeriodDuration() external {
+        // Deploy new instance with zero grace period
+        IPriceCalculator priceCalculator = (new DeployPriceCalculator()).deploy(address(token));
+        WakuRlnV2 wakuRlnV2 = (new DeployWakuRlnV2()).deploy();
+        ERC1967Proxy proxy = new ERC1967Proxy(
+            address(wakuRlnV2),
+            abi.encodeCall(WakuRlnV2.initialize, (address(priceCalculator), 100, 1, 10, 10 minutes, 0))
+        );
+        WakuRlnV2 wZeroGrace = WakuRlnV2(address(proxy));
+
+        uint256 idCommitment = 1;
+        uint32 rateLimit = wZeroGrace.minMembershipRateLimit();
+        (, uint256 price) = wZeroGrace.priceCalculator().calculate(rateLimit);
+
+        token.approve(address(wZeroGrace), price);
+        wZeroGrace.register(idCommitment, rateLimit, noIdCommitmentsToErase);
+
+        (
+            , // depositAmount
+            , // activeDuration
+            uint256 gracePeriodStart,
+            , // gracePeriodDuration
+            , // rateLimit
+            , // index
+            , // holder
+                // token
+        ) = wZeroGrace.memberships(idCommitment);
+
+        // Warp just after active period
+        vm.warp(gracePeriodStart + 1);
+        assertTrue(wZeroGrace.isExpired(idCommitment));
+        assertFalse(wZeroGrace.isInGracePeriod(idCommitment));
+
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = idCommitment;
+        vm.expectRevert(abi.encodeWithSelector(CannotExtendNonGracePeriodMembership.selector, idCommitment));
+        wZeroGrace.extendMemberships(ids);
+
+        // Erase and check event
+        vm.expectEmit(true, true, true, true);
+        emit MembershipUpgradeable.MembershipExpired(idCommitment, rateLimit, 0);
+        wZeroGrace.eraseMemberships(ids);
+
+        (,,,, uint32 fetchedRateLimit,,,) = wZeroGrace.memberships(idCommitment);
+        assertEq(fetchedRateLimit, 0);
+    }
+
+    function test__FullCleanUpErasure() external {
+        uint256 idCommitment = 1;
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        token.approve(address(w), price);
+        w.register(idCommitment, rateLimit, noIdCommitmentsToErase);
+
+        uint256 initialRoot = w.root();
+
+        (
+            , // depositAmount
+            , // activeDuration
+            uint256 graceStart,
+            uint32 gracePeriodDuration,
+            , // rateLimit
+            , // index
+            , // holder
+                // token
+        ) = w.memberships(idCommitment);
+
+        vm.warp(graceStart + gracePeriodDuration + 1); // Expire
+
+        uint256[] memory toErase = new uint256[](1);
+        toErase[0] = idCommitment;
+        w.eraseMemberships(toErase, true); // Full clean-up
+
+        // Use public function to get rate commitment at index 0
+        uint256[] memory commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, 0);
+        assertEq(commitments[0], 0);
+
+        assertNotEq(w.root(), initialRoot); // Root changed
+
+        // Count the length of indicesOfLazilyErasedMemberships
+        uint256 erasedLength = 0;
+        while (true) {
+            try w.indicesOfLazilyErasedMemberships(erasedLength) {
+                erasedLength++;
+            } catch {
+                break;
+            }
+        }
+        assertEq(erasedLength, 1);
+        assertEq(w.nextFreeIndex(), 1); // Unchanged
+    }
+
+    function test__TokenTransferFailures() external {
+        // Deploy MaliciousToken implementation
+        MaliciousToken maliciousTokenImpl = new MaliciousToken();
+
+        // Deploy proxy with no reentrancy (enables failTransfer)
+        address maliciousTokenAddress = address(maliciousTokenImpl);
+        ERC1967Proxy proxy =
+            new ERC1967Proxy(maliciousTokenAddress, abi.encodeCall(MaliciousToken.initialize, (address(0), true)));
+        MaliciousToken maliciousToken = MaliciousToken(address(proxy));
+
+        // Mint tokens
+        maliciousToken.mint(address(this), 100_000_000 ether);
+
+        // Compute new calculator before prank
+        address newCalc = address(new DeployPriceCalculator().deploy(address(maliciousToken)));
+
+        // Set price calculator using the actual owner
+        vm.prank(w.owner());
+        w.setPriceCalculator(newCalc);
+
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        // Approve tokens
+        maliciousToken.approve(address(w), price);
+
+        // Expect transfer failure
+        vm.expectRevert("Malicious transfer failure");
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+    }
+
+    struct ReinitSnap {
+        address owner;
+        address priceCalculator;
+        uint32 maxTotalRateLimit;
+        uint32 minMembershipRateLimit;
+        uint32 maxMembershipRateLimit;
+        uint32 activeDurationForNewMemberships;
+        uint32 gracePeriodDurationForNewMemberships;
+        uint32 MAX_MEMBERSHIP_SET_SIZE;
+        uint32 deployedBlockNumber;
+        uint32 nextFreeIndex;
+        uint256 currentTotalRateLimit;
+        uint256 merkleRoot;
+    }
+
+    function _snapshot() internal view returns (ReinitSnap memory s) {
+        s.owner = w.owner();
+        s.priceCalculator = address(w.priceCalculator());
+        s.maxTotalRateLimit = w.maxTotalRateLimit();
+        s.minMembershipRateLimit = w.minMembershipRateLimit();
+        s.maxMembershipRateLimit = w.maxMembershipRateLimit();
+        s.activeDurationForNewMemberships = w.activeDurationForNewMemberships();
+        s.gracePeriodDurationForNewMemberships = w.gracePeriodDurationForNewMemberships();
+        s.MAX_MEMBERSHIP_SET_SIZE = w.MAX_MEMBERSHIP_SET_SIZE();
+        s.deployedBlockNumber = w.deployedBlockNumber();
+        s.nextFreeIndex = w.nextFreeIndex();
+        s.currentTotalRateLimit = w.currentTotalRateLimit();
+        s.merkleRoot = w.root();
+    }
+
+    function test__ReinitializationProtection() external {
+        // 1) Snapshot before
+        ReinitSnap memory before_ = _snapshot();
+
+        // 2) Prepare args BEFORE expectRevert (to avoid consuming it with view calls)
+        address calc = before_.priceCalculator;
+        uint32 maxTotal = before_.maxTotalRateLimit;
+        uint32 minRate = before_.minMembershipRateLimit;
+        uint32 maxRate = before_.maxMembershipRateLimit;
+        uint32 activeDur = 15;
+        uint32 graceDur = 5;
+
+        // 3) Second initialization must revert (use a loose matcher for OZ v4/v5 compatibility)
+        vm.expectRevert("Initializable: contract is already initialized");
+        w.initialize(calc, maxTotal, minRate, maxRate, activeDur, graceDur);
+
+        // 4) Snapshot after and compare
+        ReinitSnap memory after_ = _snapshot();
+
+        assertEq(after_.owner, before_.owner, "owner changed");
+        assertEq(after_.priceCalculator, before_.priceCalculator, "priceCalculator changed");
+        assertEq(after_.maxTotalRateLimit, before_.maxTotalRateLimit, "maxTotalRateLimit changed");
+        assertEq(after_.minMembershipRateLimit, before_.minMembershipRateLimit, "minMembershipRateLimit changed");
+        assertEq(after_.maxMembershipRateLimit, before_.maxMembershipRateLimit, "maxMembershipRateLimit changed");
+        assertEq(
+            after_.activeDurationForNewMemberships, before_.activeDurationForNewMemberships, "activeDuration changed"
+        );
+        assertEq(
+            after_.gracePeriodDurationForNewMemberships,
+            before_.gracePeriodDurationForNewMemberships,
+            "gracePeriod changed"
+        );
+        assertEq(after_.MAX_MEMBERSHIP_SET_SIZE, before_.MAX_MEMBERSHIP_SET_SIZE, "MAX_MEMBERSHIP_SET_SIZE changed");
+        assertEq(after_.deployedBlockNumber, before_.deployedBlockNumber, "deployedBlockNumber changed");
+        assertEq(after_.nextFreeIndex, before_.nextFreeIndex, "nextFreeIndex changed");
+        assertEq(after_.currentTotalRateLimit, before_.currentTotalRateLimit, "currentTotalRateLimit changed");
+        assertEq(after_.merkleRoot, before_.merkleRoot, "merkle root changed");
+    }
+
+    function test__PriceCalculatorReconfiguration() external {
+        LinearPriceCalculator newCalc = new LinearPriceCalculator(address(token), 10 wei); // Different price
+
+        // Non-owner
+        vm.prank(vm.addr(1));
+        vm.expectRevert("Ownable: caller is not the owner");
+        w.setPriceCalculator(address(newCalc));
+
+        // Owner
+        vm.prank(w.owner());
+        w.setPriceCalculator(address(newCalc));
+
+        assertEq(address(w.priceCalculator()), address(newCalc));
+
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 newPrice) = w.priceCalculator().calculate(rateLimit);
+        assertEq(newPrice, uint256(rateLimit) * 10 wei);
+
+        token.approve(address(w), newPrice);
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+        assertEq(token.balanceOf(address(w)), newPrice);
+    }
+
+    function test__ZeroPriceEdgeCase() external {
+        MockPriceCalculator zeroPriceCalc = new MockPriceCalculator(address(token), 0);
+
+        vm.prank(w.owner());
+        w.setPriceCalculator(address(zeroPriceCalc));
+
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+        assertEq(price, 0);
+
+        // No approval needed since price=0
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+
+        (,,,, uint32 fetchedRateLimit, uint32 index,,) = w.memberships(1);
+        assertEq(fetchedRateLimit, rateLimit);
+        assertEq(index, 0);
+        assertEq(
+            w.root(),
+            13_301_394_660_502_635_912_556_179_583_660_948_983_063_063_326_359_792_688_871_878_654_796_186_320_104
+        ); // expected root after insert
+        assertEq(token.balanceOf(address(w)), 0); // No transfer
     }
 }
