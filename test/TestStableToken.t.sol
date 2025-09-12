@@ -117,7 +117,7 @@ contract TestStableTokenTest is Test {
         uint256 mintAmount = 1000 ether;
 
         vm.prank(nonMinter);
-        vm.expectRevert(abi.encodeWithSelector(AccountNotMinter.selector));
+        vm.expectRevert("AccountNotMinter");
         token.mint(user1, mintAmount);
     }
 
@@ -145,7 +145,7 @@ contract TestStableTokenTest is Test {
         token.removeMinter(user1);
 
         vm.prank(user1);
-        vm.expectRevert(abi.encodeWithSelector(AccountNotMinter.selector));
+        vm.expectRevert("AccountNotMinter");
         token.mint(user2, mintAmount);
     }
 
