@@ -31,7 +31,7 @@ contract TestStableToken is
     event MaxSupplySet(uint256 oldMaxSupply, uint256 newMaxSupply);
 
     modifier onlyOwnerOrMinter() {
-        if (msg.sender != owner() && !isMinter[msg.sender]) revert AccountNotMinter();
+        if (msg.sender != owner() && !isMinter[msg.sender]) revert("AccountNotMinter");
         _;
     }
 

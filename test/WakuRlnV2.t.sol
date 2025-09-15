@@ -21,7 +21,7 @@ contract MaliciousToken is TestStableToken {
     bool public failTransferEnabled;
 
     function initialize(address _target, bool _failTransferEnabled) public initializer {
-        super.initialize();
+        super.initialize(100_000_000 ether);
         target = _target;
         failTransferEnabled = _failTransferEnabled;
     }
@@ -1168,7 +1168,7 @@ contract WakuRlnV2Test is Test {
         MaliciousToken maliciousToken = MaliciousToken(address(proxy));
 
         // Mint tokens
-        maliciousToken.mint(address(this), 100_000_000 ether);
+        maliciousToken.mint(address(this), 100_000 ether);
 
         // Compute new calculator before prank
         address newCalc = address(new DeployPriceCalculator().deploy(address(maliciousToken)));
