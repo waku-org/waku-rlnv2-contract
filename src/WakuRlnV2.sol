@@ -74,7 +74,8 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
         uint32 _minMembershipRateLimit,
         uint32 _maxMembershipRateLimit,
         uint32 _activeDuration,
-        uint32 _gracePeriod
+        uint32 _gracePeriod,
+        address _freeRegistrationAddress
     )
         public
         initializer
@@ -87,7 +88,8 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
             _minMembershipRateLimit,
             _maxMembershipRateLimit,
             _activeDuration,
-            _gracePeriod
+            _gracePeriod,
+            _freeRegistrationAddress
         );
 
         MAX_MEMBERSHIP_SET_SIZE = uint32(1 << MERKLE_TREE_DEPTH);
@@ -304,5 +306,11 @@ contract WakuRlnV2 is Initializable, OwnableUpgradeable, UUPSUpgradeable, Member
     function setGracePeriodDuration(uint32 _gracePeriodDurationForNewMembership) external onlyOwner {
         // Note: grace period duration may be equal to zero
         gracePeriodDurationForNewMemberships = _gracePeriodDurationForNewMembership;
+    }
+
+    /// @notice Set the address that can register for free (e.g. ZKPassport Verifier wrapper address)
+    /// @param _freeRegistrationAddress new free registration address
+    function setFreeRegistrationAddress(address _freeRegistrationAddress) external onlyOwner {
+        freeRegistrationAddress = _freeRegistrationAddress;
     }
 }

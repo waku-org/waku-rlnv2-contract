@@ -55,6 +55,7 @@ contract DeployProxy is BaseScript {
     function run() public broadcast returns (address) {
         address priceCalcAddr;
         address wakuRlnV2ImplAddr;
+        address freeRegistrationAddress;
 
         try vm.envAddress("PRICE_CALCULATOR_ADDRESS") returns (address envPriceCalcAddress) {
             console.log("Loading price calculator address from environment variable");
@@ -72,13 +73,22 @@ contract DeployProxy is BaseScript {
             wakuRlnV2ImplAddr = DevOpsTools.get_most_recent_deployment("WakuRlnV2", block.chainid);
         }
 
+        try vm.envAddress("FREE_REGISTRATION_ADDRESS") returns (address envFreeRegistrationAddress) {
+            console.log("Loading free registration address from environment variable");
+            freeRegistrationAddress = envFreeRegistrationAddress;
+        } catch {
+            console.log("Loading free registration address from broadcast directory");
+            freeRegistrationAddress = DevOpsTools.get_most_recent_deployment("FreeRegistration", block.chainid);
+        }
+
+        console.log("Using free registration address: %s", freeRegistrationAddress);
         console.log("Using price calculator address: %s", priceCalcAddr);
         console.log("Using WakuRLNV2 address: %s", wakuRlnV2ImplAddr);
 
-        return address(deploy(priceCalcAddr, wakuRlnV2ImplAddr));
+        return address(deploy(priceCalcAddr, wakuRlnV2ImplAddr, freeRegistrationAddress));
     }
 
-    function deploy(address _priceCalcAddr, address _wakuRlnV2ImplAddr) public returns (ERC1967Proxy) {
+    function deploy(address _priceCalcAddr, address _wakuRlnV2ImplAddr, address _freeRegistrationAddress) public returns (ERC1967Proxy) {
         bytes memory data = abi.encodeCall(
             WakuRlnV2.initialize,
             (
@@ -87,7 +97,8 @@ contract DeployProxy is BaseScript {
                 MIN_RATELIMIT_PER_MEMBERSHIP,
                 MAX_RATELIMIT_PER_MEMBERSHIP,
                 ACTIVE_DURATION,
-                GRACE_PERIOD_DURATION
+                GRACE_PERIOD_DURATION,
+                _freeRegistrationAddress
             )
         );
         return new ERC1967Proxy(_wakuRlnV2ImplAddr, data);

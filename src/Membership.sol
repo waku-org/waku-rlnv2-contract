@@ -65,6 +65,9 @@ abstract contract MembershipUpgradeable is Initializable {
     /// @notice Indices of erased memberships that can be reused for new registrations
     uint32[] public indicesOfLazilyErasedMemberships;
 
+    /// @notice Address which is allowed to register for free
+    address public freeRegistrationAddress;
+
     struct MembershipInfo {
         /// @notice the deposit amount (in tokens) to register this membership
         uint256 depositAmount;
@@ -124,7 +127,8 @@ abstract contract MembershipUpgradeable is Initializable {
         uint32 _minMembershipRateLimit,
         uint32 _maxMembershipRateLimit,
         uint32 _activeDurationForNewMemberships,
-        uint32 _gracePeriodDurationForNewMemberships
+        uint32 _gracePeriodDurationForNewMemberships,
+        address _freeRegistrationAddress
     )
         internal
         onlyInitializing
@@ -135,7 +139,8 @@ abstract contract MembershipUpgradeable is Initializable {
             _minMembershipRateLimit,
             _maxMembershipRateLimit,
             _activeDurationForNewMemberships,
-            _gracePeriodDurationForNewMemberships
+            _gracePeriodDurationForNewMemberships,
+            _freeRegistrationAddress
         );
     }
 
@@ -145,7 +150,8 @@ abstract contract MembershipUpgradeable is Initializable {
         uint32 _minMembershipRateLimit,
         uint32 _maxMembershipRateLimit,
         uint32 _activeDurationForNewMemberships,
-        uint32 _gracePeriodDurationForNewMemberships
+        uint32 _gracePeriodDurationForNewMemberships,
+        address _freeRegistrationAddress
     )
         internal
         onlyInitializing
@@ -161,6 +167,7 @@ abstract contract MembershipUpgradeable is Initializable {
         maxMembershipRateLimit = _maxMembershipRateLimit;
         activeDurationForNewMemberships = _activeDurationForNewMemberships;
         gracePeriodDurationForNewMemberships = _gracePeriodDurationForNewMemberships;
+        freeRegistrationAddress = _freeRegistrationAddress;
     }
 
     /// @dev acquire a membership and transfer the deposit to the contract
@@ -189,7 +196,11 @@ abstract contract MembershipUpgradeable is Initializable {
             revert CannotExceedMaxTotalRateLimit();
         }
 
-        (address token, uint256 depositAmount) = priceCalculator.calculate(_rateLimit);
+        (address token, uint256 depositAmount) = (address(0), 0);
+
+        if (priceCalculator != IPriceCalculator(address(0)) && _sender != address(freeRegistrationAddress)) {
+            (token, depositAmount) = priceCalculator.calculate(_rateLimit);
+        }
 
         // Possibly reuse an index of an erased membership
         (index, indexReused) = _getFreeIndex();
@@ -205,7 +216,9 @@ abstract contract MembershipUpgradeable is Initializable {
             index: index
         });
 
-        IERC20(token).safeTransferFrom(_sender, address(this), depositAmount);
+        if (priceCalculator != IPriceCalculator(address(0)) && _sender != address(freeRegistrationAddress)) {
+            IERC20(token).safeTransferFrom(_sender, address(this), depositAmount);
+        }
     }
 
     /// @notice Checks if a rate limit is within the allowed bounds

@@ -32,7 +32,7 @@ contract WakuRlnV2Test is Test {
 
         IPriceCalculator priceCalculator = (new DeployPriceCalculator()).deploy(address(token));
         WakuRlnV2 wakuRlnV2 = (new DeployWakuRlnV2()).deploy();
-        ERC1967Proxy proxy = (new DeployProxy()).deploy(address(priceCalculator), address(wakuRlnV2));
+        ERC1967Proxy proxy = (new DeployProxy()).deploy(address(priceCalculator), address(wakuRlnV2), address(0));
 
         w = WakuRlnV2(address(proxy));
 
@@ -773,7 +773,7 @@ contract WakuRlnV2Test is Test {
 
     function test__Upgrade() external {
         address testImpl = address(new WakuRlnV2());
-        bytes memory data = abi.encodeCall(WakuRlnV2.initialize, (address(0), 100, 1, 10, 10 minutes, 4 minutes));
+        bytes memory data = abi.encodeCall(WakuRlnV2.initialize, (address(0), 100, 1, 10, 10 minutes, 4 minutes, address(0)));
         address proxy = address(new ERC1967Proxy(testImpl, data));
 
         address newImpl = address(new WakuRlnV2());
