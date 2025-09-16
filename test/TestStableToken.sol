@@ -8,6 +8,7 @@ import { ERC20PermitUpgradeable } from
 import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 error AccountNotMinter();
 error AccountAlreadyMinter();
@@ -90,7 +91,27 @@ contract TestStableToken is
 }
 
 contract TestStableTokenFactory is BaseScript {
+    /// @notice Deploys the implementation and an ERC1967 proxy, initializing the proxy atomically.
+    /// @dev Reads `MAX_SUPPLY` from environment (wei). Defaults to 1_000_000 * 10**18.
     function run() public broadcast returns (address) {
-        return address(new TestStableToken());
+        // Read desired max supply from env or use default
+        uint256 defaultMaxSupply = vm.envOr({ name: "MAX_SUPPLY", defaultValue: uint256(1_000_000 * 10 ** 18) });
+
+        // Validate value is sensible
+        if (defaultMaxSupply == 0) revert("MAX_SUPPLY must be > 0");
+
+        // Deploy the implementation
+        address implementation = address(new TestStableToken());
+
+    // Encode initializer calldata to run in proxy context (maxSupply)
+    bytes memory initData = abi.encodeCall(TestStableToken.initialize, (defaultMaxSupply));
+
+        // Deploy ERC1967Proxy with initialization data so storage (owner, maxSupply) is set atomically
+        ERC1967Proxy proxy = new ERC1967Proxy(implementation, initData);
+
+        // // Only check maxSupply was initialized; owner checks are optional for basic deployments
+        // address proxyAddr = address(proxy);
+
+        return address(proxy);
     }
 }

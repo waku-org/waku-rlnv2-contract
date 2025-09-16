@@ -21,10 +21,12 @@ token distribution while mimicking DAI's behaviour.
 
 ## Usage
 
+Add environment variable `MAX_SUPPLY` to set the maximum supply of the token, otherwise it defaults to 10 million tokens.
+
 ### Deploy new TestStableToken with proxy contract
 
-This script deploys both the proxy and the TestStableToken implementation, initializing the proxy to point to the new
-implementation.
+This script deploys both the proxy contract and the TestStableToken implementation contract, initializing the proxy to
+point to the new implementation.
 
 ```bash
 ETH_FROM=$DEPLOYER_ACCOUNT_ADDRESS forge script script/DeployTokenWithProxy.s.sol:DeployTokenWithProxy --rpc-url $RPC_URL --broadcast --private_key $DEPLOYER_ACCOUNT_PRIVATE_KEY
@@ -36,21 +38,31 @@ or
 MNEMONIC=$TWELVE_WORD_MNEMONIC forge script script/DeployTokenWithProxy.s.sol:DeployTokenWithProxy --rpc-url $RPC_URL --broadcast
 ```
 
-### Deploy only TestStableToken contract implementation
+### Deploy only TestStableToken implementation contract
 
-This script deploys only the TestStableToken implementation, which can then be used to update the proxy contract to
-point to this new implementation.
-
-```bash
-forge script test/TestStableToken.sol:TestStableTokenFactory --tc TestStableTokenFactory --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY --broadcast
-```
-
-### Update the proxy contract to point to the new implementation
+This script deploys only the TestStableToken implementation. The proxy contract can then be updated to point to this new
+implementation.
 
 ```bash
-# Upgrade the proxy to a new implementation
-cast send $TOKEN_PROXY_ADDRESS "upgradeTo(address)" $NEW_IMPLEMENTATION_ADDRESS --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY
+ETH_FROM=$DEPLOYER_ACCOUNT_ADDRESS forge script test/TestStableToken.sol:TestStableTokenFactory --tc TestStableTokenFactory --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY --broadcast
 ```
+
+### Update the proxy contract to point to the new implementation (safe, recommended)
+
+When upgrading a UUPS/ERC1967 proxy you should perform the upgrade and initialization in the same transaction to avoid
+leaving the proxy in an uninitialized state. Use `upgradeToAndCall(address,bytes)` with the initializer calldata.
+
+```bash
+# Encode the initializer calldata (example: set MAX_SUPPLY to 1_000_000 * 10**18)
+DATA=$(cast abi-encode "initialize(uint256)" 1000000000000000000000000)
+
+# Perform upgrade and call initializer atomically
+cast send $TOKEN_PROXY_ADDRESS "upgradeToAndCall(address,bytes)" $NEW_IMPLEMENTATION_ADDRESS $DATA --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY
+```
+
+If you must call `upgradeTo` separately (not recommended), follow up immediately with an `initialize(...)` call in the
+same transaction or as the next transaction from the owner/multisig. However, prefer `upgradeToAndCall` to eliminate the
+time window where the proxy points to a new implementation but its storage (e.g., `maxSupply`) is uninitialized.
 
 ### Add account to the allowlist to enable minting
 
