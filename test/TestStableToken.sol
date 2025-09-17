@@ -15,6 +15,7 @@ error AccountAlreadyMinter();
 error AccountNotInMinterList();
 error InsufficientETH();
 error ExceedsMaxSupply();
+error InvalidMaxSupply(uint256 supplied);
 
 contract TestStableToken is
     Initializable,
@@ -45,6 +46,7 @@ contract TestStableToken is
         __ERC20Permit_init("TestStableToken");
         __Ownable_init();
         __UUPSUpgradeable_init();
+        if (_maxSupply == 0) revert InvalidMaxSupply(_maxSupply);
 
         maxSupply = _maxSupply;
     }
@@ -96,9 +98,6 @@ contract TestStableTokenFactory is BaseScript {
     function run() public broadcast returns (address) {
         // Read desired max supply from env or use default
         uint256 defaultMaxSupply = vm.envOr({ name: "MAX_SUPPLY", defaultValue: uint256(1_000_000 * 10 ** 18) });
-
-        // Validate value is sensible
-        if (defaultMaxSupply == 0) revert("MAX_SUPPLY must be > 0");
 
         // Deploy the implementation
         address implementation = address(new TestStableToken());

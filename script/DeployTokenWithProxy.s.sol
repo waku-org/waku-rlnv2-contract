@@ -14,9 +14,6 @@ contract DeployTokenWithProxy is BaseScript {
         // Read desired max supply from env or use default
         uint256 defaultMaxSupply = vm.envOr({ name: "MAX_SUPPLY", defaultValue: uint256(1_000_000 * 10 ** 18) });
 
-        // Validate value is sensible
-        require(defaultMaxSupply > 0, "MAX_SUPPLY must be > 0");
-
         // Deploy the initial implementation
         address implementation = address(new TestStableToken());
 
