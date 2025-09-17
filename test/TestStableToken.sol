@@ -103,14 +103,11 @@ contract TestStableTokenFactory is BaseScript {
         // Deploy the implementation
         address implementation = address(new TestStableToken());
 
-    // Encode initializer calldata to run in proxy context (maxSupply)
-    bytes memory initData = abi.encodeCall(TestStableToken.initialize, (defaultMaxSupply));
+        // Encode initializer calldata to run in proxy context (maxSupply)
+        bytes memory initData = abi.encodeCall(TestStableToken.initialize, (defaultMaxSupply));
 
         // Deploy ERC1967Proxy with initialization data so storage (owner, maxSupply) is set atomically
         ERC1967Proxy proxy = new ERC1967Proxy(implementation, initData);
-
-        // // Only check maxSupply was initialized; owner checks are optional for basic deployments
-        // address proxyAddr = address(proxy);
 
         return address(proxy);
     }
