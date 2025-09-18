@@ -93,21 +93,7 @@ contract TestStableToken is
 }
 
 contract TestStableTokenFactory is BaseScript {
-    /// @notice Deploys the implementation and an ERC1967 proxy, initializing the proxy atomically.
-    /// @dev Reads `MAX_SUPPLY` from environment (wei). Defaults to 1_000_000 * 10**18.
     function run() public broadcast returns (address) {
-        // Read desired max supply from env or use default
-        uint256 defaultMaxSupply = vm.envOr({ name: "MAX_SUPPLY", defaultValue: uint256(1_000_000 * 10 ** 18) });
-
-        // Deploy the implementation
-        address implementation = address(new TestStableToken());
-
-        // Encode initializer calldata to run in proxy context (maxSupply)
-        bytes memory initData = abi.encodeCall(TestStableToken.initialize, (defaultMaxSupply));
-
-        // Deploy ERC1967Proxy with initialization data so storage (owner, maxSupply) is set atomically
-        ERC1967Proxy proxy = new ERC1967Proxy(implementation, initData);
-
-        return address(proxy);
+        return address(new TestStableToken());
     }
 }
