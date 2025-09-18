@@ -11,14 +11,14 @@ contract DeployTokenWithProxy is BaseScript {
     }
 
     function deploy() public returns (ERC1967Proxy) {
-        // Read desired max supply from env or use default
-        uint256 defaultMaxSupply = vm.envOr({ name: "MAX_SUPPLY", defaultValue: uint256(1_000_000 * 10 ** 18) });
+        // Read desired token cap from env or use default
+        uint256 defaultCap = vm.envOr({ name: "TOKEN_CAP", defaultValue: uint256(1_000_000 * 10 ** 18) });
 
         // Deploy the initial implementation
         address implementation = address(new TestStableToken());
 
-        // Encode the initialize call (maxSupply)
-        bytes memory initData = abi.encodeCall(TestStableToken.initialize, (defaultMaxSupply));
+        // Encode the initialize call (cap)
+        bytes memory initData = abi.encodeCall(TestStableToken.initialize, (defaultCap));
 
         // Deploy the proxy with initialization data
         ERC1967Proxy proxy = new ERC1967Proxy(implementation, initData);
@@ -27,9 +27,9 @@ contract DeployTokenWithProxy is BaseScript {
         // These revert the script if validation fails.
         address proxyAddr = address(proxy);
 
-        // Check maxSupply set
-        uint256 actualMax = TestStableToken(proxyAddr).maxSupply();
-        if (actualMax != defaultMaxSupply) revert("Proxy maxSupply mismatch after initialization");
+        // Check cap set
+        uint256 actualMax = TestStableToken(proxyAddr).cap();
+        if (actualMax != defaultCap) revert("Proxy token cap mismatch after initialization");
 
         return proxy;
     }

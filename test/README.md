@@ -21,7 +21,7 @@ token distribution while mimicking DAI's behaviour.
 
 ## Usage
 
-Add environment variable `MAX_SUPPLY` to set the maximum supply of the token, otherwise it defaults to 10 million
+Add environment variable `TOKEN_CAP` to set the maximum supply of the token, otherwise it defaults to 1 million
 tokens.
 
 ### Deploy new TestStableToken with proxy contract
@@ -54,7 +54,7 @@ When upgrading a UUPS/ERC1967 proxy you should perform the upgrade and initializ
 leaving the proxy in an uninitialized state. Use `upgradeToAndCall(address,bytes)` with the initializer calldata.
 
 ```bash
-# Encode the initializer calldata (example: set MAX_SUPPLY to 1_000_000 * 10**18)
+# Encode the initializer calldata (example: set TOKEN_CAP to 1_000_000 * 10**18)
 DATA=$(cast abi-encode "initialize(uint256)" 1000000000000000000000000)
 
 # Perform upgrade and call initializer atomically
@@ -63,7 +63,7 @@ cast send $TOKEN_PROXY_ADDRESS "upgradeToAndCall(address,bytes)" $NEW_IMPLEMENTA
 
 If you must call `upgradeTo` separately (not recommended), follow up immediately with an `initialize(...)` call in the
 same transaction or as the next transaction from the owner/multisig. However, prefer `upgradeToAndCall` to eliminate the
-time window where the proxy points to a new implementation but its storage (e.g., `maxSupply`) is uninitialized.
+time window where the proxy points to a new implementation but its storage (e.g., `cap`) is uninitialized.
 
 ### Add account to the allowlist to enable minting
 

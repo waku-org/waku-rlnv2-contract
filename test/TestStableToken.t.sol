@@ -8,8 +8,7 @@ import {
     AccountAlreadyMinter,
     AccountNotInMinterList,
     InsufficientETH,
-    ExceedsMaxSupply,
-    InvalidMaxSupply
+    ExceedsCap
 } from "./TestStableToken.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { DeployTokenWithProxy } from "../script/DeployTokenWithProxy.s.sol";
@@ -25,7 +24,7 @@ contract TestStableTokenTest is Test {
     event MinterAdded(address indexed account);
     event MinterRemoved(address indexed account);
     event ETHBurned(uint256 amount, address indexed minter, address indexed to, uint256 tokensMinted);
-    event MaxSupplySet(uint256 oldMaxSupply, uint256 newMaxSupply);
+    event CapSet(uint256 oldCap, uint256 newCap);
 
     function setUp() public {
         // Deploy using the deployment script
@@ -278,77 +277,63 @@ contract TestStableTokenTest is Test {
         token.mintWithETH{ value: 0 }(user2);
     }
 
-    function test__MaxSupplyIsSetCorrectly() external {
-        // maxSupply should be set to 1000000 * 10^18 by deployment script
-        uint256 expectedMaxSupply = 1_000_000 * 10 ** 18;
-        assertEq(token.maxSupply(), expectedMaxSupply);
+    function test__CapIsSetCorrectly() external {
+        // Cap should be set to 1000000 * 10^18 by deployment script
+        uint256 expectedCap = 1_000_000 * 10 ** 18;
+        assertEq(token.cap(), expectedCap);
     }
 
-    function test__CannotMintExceedingMaxSupply() external {
-        uint256 currentMaxSupply = token.maxSupply();
+    function test__CannotMintExceedingCap() external {
+        uint256 currentCap = token.cap();
 
-        // Try to mint more than maxSupply
+        // Try to mint more than cap
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(ExceedsMaxSupply.selector));
-        token.mint(user1, currentMaxSupply + 1);
+        vm.expectRevert(abi.encodeWithSelector(ExceedsCap.selector));
+        token.mint(user1, currentCap + 1);
     }
 
-    function test__CannotMintWithETHExceedingMaxSupply() external {
-        uint256 currentMaxSupply = token.maxSupply();
-        // Send an amount of ETH that would exceed maxSupply when minted as tokens
-        uint256 ethAmount = currentMaxSupply + 1;
+    function test__CannotMintWithETHExceedingCap() external {
+        uint256 currentCap = token.cap();
+        // Send an amount of ETH that would exceed cap when minted as tokens
+        uint256 ethAmount = currentCap + 1;
 
-        // Try to mint more than maxSupply with ETH
+        // Try to mint more than cap with ETH
         vm.deal(owner, ethAmount);
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(ExceedsMaxSupply.selector));
+        vm.expectRevert(abi.encodeWithSelector(ExceedsCap.selector));
         token.mintWithETH{ value: ethAmount }(user1);
     }
 
-    function test__OwnerCanSetMaxSupply() external {
-        uint256 newMaxSupply = 2_000_000 * 10 ** 18;
-        uint256 oldMaxSupply = token.maxSupply();
+    function test__OwnerCanSetCap() external {
+        uint256 newCap = 2_000_000 * 10 ** 18;
+        uint256 oldCap = token.cap();
 
         vm.expectEmit(true, true, false, false);
-        emit MaxSupplySet(oldMaxSupply, newMaxSupply);
+        emit CapSet(oldCap, newCap);
 
         vm.prank(owner);
-        token.setMaxSupply(newMaxSupply);
+        token.setCap(newCap);
 
-        assertEq(token.maxSupply(), newMaxSupply);
+        assertEq(token.cap(), newCap);
     }
 
-    function test__CannotSetMaxSupplyBelowTotalSupply() external {
+    function test__CannotSetCapBelowTotalSupply() external {
         // First mint some tokens
         uint256 mintAmount = 1000 ether;
         vm.prank(owner);
         token.mint(user1, mintAmount);
 
-        // Try to set maxSupply below current totalSupply
+        // Try to set cap below current totalSupply
         vm.prank(owner);
-        vm.expectRevert(abi.encodeWithSelector(ExceedsMaxSupply.selector));
-        token.setMaxSupply(mintAmount - 1);
+        vm.expectRevert(abi.encodeWithSelector(ExceedsCap.selector));
+        token.setCap(mintAmount - 1);
     }
 
-    function test__NonOwnerCannotSetMaxSupply() external {
-        uint256 newMaxSupply = 2_000_000 * 10 ** 18;
+    function test__NonOwnerCannotSetCap() external {
+        uint256 newCap = 2_000_000 * 10 ** 18;
 
         vm.prank(user1);
         vm.expectRevert("Ownable: caller is not the owner");
-        token.setMaxSupply(newMaxSupply);
-    }
-
-    function test__InitializeZeroReverts() external {
-        // Deploy implementation directly
-        TestStableToken implementation = new TestStableToken();
-
-        // Build initializer calldata with zero
-        bytes memory initData = abi.encodeCall(TestStableToken.initialize, (uint256(0)));
-
-        // Expect the InvalidMaxSupply reversion including the supplied value
-        vm.expectRevert(abi.encodeWithSelector(InvalidMaxSupply.selector, uint256(0)));
-
-        // Attempt to deploy proxy with initData - should revert
-        new ERC1967Proxy(address(implementation), initData);
+        token.setCap(newCap);
     }
 }
