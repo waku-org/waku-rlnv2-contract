@@ -8,7 +8,8 @@ import {
     AccountAlreadyMinter,
     AccountNotInMinterList,
     InsufficientETH,
-    ExceedsMaxSupply
+    ExceedsMaxSupply,
+    InvalidMaxSupply
 } from "./TestStableToken.sol";
 import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import { DeployTokenWithProxy } from "../script/DeployTokenWithProxy.s.sol";
@@ -335,5 +336,19 @@ contract TestStableTokenTest is Test {
         vm.prank(user1);
         vm.expectRevert("Ownable: caller is not the owner");
         token.setMaxSupply(newMaxSupply);
+    }
+
+    function test__InitializeZeroReverts() external {
+        // Deploy implementation directly
+        TestStableToken implementation = new TestStableToken();
+
+        // Build initializer calldata with zero
+        bytes memory initData = abi.encodeCall(TestStableToken.initialize, (uint256(0)));
+
+        // Expect the InvalidMaxSupply reversion including the supplied value
+        vm.expectRevert(abi.encodeWithSelector(InvalidMaxSupply.selector, uint256(0)));
+
+        // Attempt to deploy proxy with initData - should revert
+        new ERC1967Proxy(address(implementation), initData);
     }
 }
