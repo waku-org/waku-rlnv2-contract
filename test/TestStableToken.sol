@@ -118,21 +118,9 @@ contract TestStableToken is
 }
 
 contract TestStableTokenFactory is BaseScript {
-    /// @notice Deploys the implementation and an ERC1967 proxy, initializing the proxy atomically.
-    /// @dev Reads `TOKEN_CAP` from environment (wei). Defaults to 1_000_000 * 10**18.
+    // Use the returned implementation address with a proxy upgrade call (e.g. `upgradeToAndCall`) to atomically point a
+    // proxy to the new implementation and initialize it.
     function run() public broadcast returns (address) {
-        // Read desired token cap from env or use default
-        uint256 defaultCap = vm.envOr({ name: "TOKEN_CAP", defaultValue: uint256(1_000_000 * 10 ** 18) });
-
-        // Deploy the implementation
-        address implementation = address(new TestStableToken());
-
-        // Encode initializer calldata to run in proxy context (cap)
-        bytes memory initData = abi.encodeCall(TestStableToken.initialize, (defaultCap));
-
-        // Deploy ERC1967Proxy with initialization data so storage (owner, cap) is set atomically
-        ERC1967Proxy proxy = new ERC1967Proxy(implementation, initData);
-
-        return address(proxy);
+        return address(new TestStableToken());
     }
 }

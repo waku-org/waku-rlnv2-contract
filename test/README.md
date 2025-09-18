@@ -21,8 +21,7 @@ token distribution while mimicking DAI's behaviour.
 
 ## Usage
 
-Add environment variable `TOKEN_CAP` to set the maximum supply of the token, otherwise it defaults to 1 million
-tokens.
+Add environment variable `TOKEN_CAP` to set the maximum supply of the token, otherwise it defaults to 1 million tokens.
 
 ### Deploy new TestStableToken with proxy contract
 
