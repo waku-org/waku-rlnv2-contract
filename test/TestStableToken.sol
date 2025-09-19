@@ -118,8 +118,6 @@ contract TestStableToken is
 }
 
 contract TestStableTokenFactory is BaseScript {
-    // Use the returned implementation address with a proxy upgrade call (e.g. `upgradeToAndCall`) to atomically point a
-    // proxy to the new implementation and initialize it.
     function run() public broadcast returns (address) {
         return address(new TestStableToken());
     }

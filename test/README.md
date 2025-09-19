@@ -47,7 +47,18 @@ implementation.
 ETH_FROM=$DEPLOYER_ACCOUNT_ADDRESS forge script test/TestStableToken.sol:TestStableTokenFactory --tc TestStableTokenFactory --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY --broadcast
 ```
 
-### Update the proxy contract to point to the new implementation (safe, recommended)
+### Update the proxy contract to point to the new implementation
+
+#### Option 1: Update proxy implementation address only (recommended when the cap is already set)
+
+When the proxy is already initialized and the `cap` is set, you can simply update the implementation address using
+`upgradeTo(address)`.
+
+```bash
+cast send $TOKEN_PROXY_ADDRESS "upgradeTo(address)" $NEW_IMPLEMENTATION_ADDRESS --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY
+```
+
+#### Option 2: Update proxy implementation address and initialize cap
 
 When upgrading a UUPS/ERC1967 proxy you should perform the upgrade and initialization in the same transaction to avoid
 leaving the proxy in an uninitialized state. Use `upgradeToAndCall(address,bytes)` with the initializer calldata.
