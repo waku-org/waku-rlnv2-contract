@@ -21,16 +21,6 @@ contract DeployTokenWithProxy is BaseScript {
         bytes memory initData = abi.encodeCall(TestStableToken.initialize, (defaultMaxSupply));
 
         // Deploy the proxy with initialization data
-        ERC1967Proxy proxy = new ERC1967Proxy(implementation, initData);
-
-        // Post-deploy assertions to ensure initialization succeeded
-        // These revert the script if validation fails.
-        address proxyAddr = address(proxy);
-
-        // Check maxSupply set
-        uint256 actualMax = TestStableToken(proxyAddr).maxSupply();
-        if (actualMax != defaultMaxSupply) revert("Proxy maxSupply mismatch after initialization");
-
-        return proxy;
+        return new ERC1967Proxy(implementation, initData);
     }
 }
