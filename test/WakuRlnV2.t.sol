@@ -693,7 +693,6 @@ contract WakuRlnV2Test is Test {
 
         // Calculate required token amount for membership
         (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
-        uint256 ethAmount = price; // Use same amount of ETH as token price needed
 
         // Verify nonMinter is not a minter
         assertFalse(token.isMinter(nonMinter));
@@ -1301,5 +1300,79 @@ contract WakuRlnV2Test is Test {
             13_301_394_660_502_635_912_556_179_583_660_948_983_063_063_326_359_792_688_871_878_654_796_186_320_104
         ); // expected root after insert
         assertEq(token.balanceOf(address(w)), 0); // No transfer
+    }
+
+    function test__MassRegistrationAndErasure() external {
+        uint32 num = 10; // Number of memberships to register - adjust for gas limits in testing
+        uint32 rateLimit = 1; // Low to fit max total
+        vm.prank(w.owner());
+        w.setMinMembershipRateLimit(1);
+
+        vm.prank(w.owner());
+        w.setMaxMembershipRateLimit(1);
+
+        vm.prank(w.owner());
+        w.setMaxTotalRateLimit(num * rateLimit);
+
+        vm.prank(w.owner());
+        w.setActiveDuration(600); // 10 minutes
+
+        vm.prank(w.owner());
+        w.setGracePeriodDuration(240); // 4 minutes
+
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        for (uint256 i = 1; i <= num; i++) {
+            token.approve(address(w), price);
+            w.register(i, rateLimit, noIdCommitmentsToErase);
+        }
+        assertEq(w.nextFreeIndex(), num);
+        assertEq(w.currentTotalRateLimit(), num * rateLimit);
+
+        // Warp to expire all
+        vm.warp(
+            block.timestamp + uint256(w.activeDurationForNewMemberships())
+                + uint256(w.gracePeriodDurationForNewMemberships()) + 1
+        );
+
+        uint256[] memory toErase = new uint256[](num / 2);
+        for (uint256 i = 0; i < num / 2; i++) {
+            toErase[i] = i + 1;
+        }
+        w.eraseMemberships(toErase, false); // Lazy half
+
+        uint256[] memory toEraseFull = new uint256[](num / 2);
+        for (uint256 i = num / 2; i < num; i++) {
+            toEraseFull[i - num / 2] = i + 1;
+        }
+        w.eraseMemberships(toEraseFull, true); // Full half
+
+        assertEq(w.currentTotalRateLimit(), 0);
+
+        // Verify root and commitments
+        uint256[] memory actual_rcs = w.getRateCommitmentsInRangeBoundsInclusive(0, num - 1);
+        uint256[] memory expected_rcs = new uint256[](num);
+        for (uint256 i = 0; i < num; i++) {
+            if (i < num / 2) {
+                // Lazy erased: commitments remain as original
+                expected_rcs[i] = PoseidonT3.hash([uint256(i + 1), uint256(rateLimit)]);
+            } else {
+                // Fully erased: commitments set to 0
+                expected_rcs[i] = 0;
+            }
+            assertEq(actual_rcs[i], expected_rcs[i]);
+        }
+
+        // Verify all memberships are considered erased (rateLimit == 0)
+        for (uint256 i = 1; i <= num; i++) {
+            (uint32 rl, uint32 idx, uint256 rc) = w.getMembershipInfo(i);
+            assertEq(rl, 0);
+            assertEq(idx, 0);
+            assertEq(rc, 0);
+            assertFalse(w.isInMembershipSet(i));
+        }
+
+        // Optionally, verify the Merkle root is non-zero (since partial tree remains)
+        assertNotEq(w.root(), 0);
     }
 }
