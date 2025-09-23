@@ -1397,4 +1397,19 @@ contract WakuRlnV2Test is Test {
             assertEq(commitments[i], expected);
         }
     }
+
+    function test__EmptyRangePagination() external {
+        // Valid range with one element
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+        token.approve(address(w), price);
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+
+        uint256[] memory commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, 0);
+        assertEq(commitments.length, 1);
+
+        // Beyond nextFreeIndex
+        vm.expectRevert(abi.encodeWithSelector(InvalidPaginationQuery.selector, 1, 1));
+        w.getRateCommitmentsInRangeBoundsInclusive(1, 1);
+    }
 }
