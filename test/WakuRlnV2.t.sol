@@ -1375,4 +1375,26 @@ contract WakuRlnV2Test is Test {
         // Optionally, verify the Merkle root is non-zero (since partial tree remains)
         assertNotEq(w.root(), 0);
     }
+
+    function test__LargePaginationQuery() external {
+        uint32 num = 1000;
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        // Register 'num' memberships
+        for (uint256 i = 1; i <= num; i++) {
+            token.approve(address(w), price);
+            w.register(i, rateLimit, noIdCommitmentsToErase);
+        }
+
+        // Large query for the rate commitments
+        uint256[] memory commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, num - 1);
+        assertEq(commitments.length, num);
+
+        // Verify each returned commitment matches the expected Poseidon hash
+        for (uint256 i = 0; i < num; i++) {
+            uint256 expected = PoseidonT3.hash([i + 1, rateLimit]);
+            assertEq(commitments[i], expected);
+        }
+    }
 }
