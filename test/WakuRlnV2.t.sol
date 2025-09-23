@@ -1474,4 +1474,32 @@ contract WakuRlnV2Test is Test {
         assertEq(currentImpl, originalImpl);
         assertNotEq(currentImpl, invalidImpl);
     }
+
+    function test__UnauthorizedMerkleTreeModifications() external {
+        // Register a single membership to populate the Merkle tree
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+        token.approve(address(w), price);
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+
+        // Capture the initial Merkle tree root
+        uint256 initialRoot = w.root();
+
+        // Attempt a low-level call to a nonexistent public function resembling LazyIMT's internal update
+        // Since LazyIMT's update is internal, no such function exists publicly, so the call will fail
+        bytes memory invalidCallData = abi.encodeWithSignature("update(uint256,uint32)", 0, 0);
+        (bool success,) = address(w).call(invalidCallData);
+
+        // Verify the call failed (no public function exists)
+        assertFalse(success);
+
+        // Verify the Merkle tree root remains unchanged
+        assertEq(w.root(), initialRoot);
+
+        // Verify membership data is intact
+        (uint32 fetchedRateLimit, uint32 index, uint256 rateCommitment) = w.getMembershipInfo(1);
+        assertEq(fetchedRateLimit, rateLimit);
+        assertEq(index, 0);
+        assertEq(rateCommitment, PoseidonT3.hash([uint256(1), uint256(rateLimit)]));
+    }
 }
