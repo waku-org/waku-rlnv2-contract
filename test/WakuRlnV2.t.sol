@@ -63,6 +63,10 @@ contract MockPriceCalculator is IPriceCalculator {
     }
 }
 
+contract NonUUPSContract {
+// A mock contract that does not support UUPS (no proxiable UUID or _authorizeUpgrade)
+}
+
 contract WakuRlnV2Test is Test {
     WakuRlnV2 internal w;
     TestStableToken internal token;
@@ -1450,5 +1454,24 @@ contract WakuRlnV2Test is Test {
             assertEq(active2, 20 minutes);
             assertEq(grace2, 5 minutes);
         }
+    }
+
+    function test__UpgradeWithInvalidImplementation() external {
+        // Deploy an invalid (non-UUPS) implementation contract
+        address invalidImpl = address(new NonUUPSContract());
+
+        // Capture the current implementation address from the ERC1967 slot
+        bytes32 implSlot = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
+        address originalImpl = address(uint160(uint256(vm.load(address(w), implSlot))));
+
+        // Impersonate the owner and expect the specific UUPS revert for unsupported proxiable UUID
+        vm.prank(w.owner());
+        vm.expectRevert("ERC1967Upgrade: new implementation is not UUPS");
+        UUPSUpgradeable(address(w)).upgradeTo(invalidImpl);
+
+        // Verify the implementation slot remains unchanged (still the original)
+        address currentImpl = address(uint160(uint256(vm.load(address(w), implSlot))));
+        assertEq(currentImpl, originalImpl);
+        assertNotEq(currentImpl, invalidImpl);
     }
 }
