@@ -21,8 +21,7 @@ token distribution while mimicking DAI's behaviour.
 
 ## Usage
 
-Add environment variable `MAX_SUPPLY` to set the maximum supply of the token, otherwise it defaults to 10 million
-tokens.
+Add environment variable `MAX_SUPPLY` to set the maximum supply of the token, otherwise it defaults to 1 million tokens.
 
 ### Deploy new TestStableToken with proxy contract
 
@@ -41,20 +40,20 @@ MNEMONIC=$TWELVE_WORD_MNEMONIC forge script script/DeployTokenWithProxy.s.sol:De
 
 ### Deploy only TestStableToken implementation contract
 
-This script deploys only the TestStableToken implementation. The proxy contract can then be updated to point to this new
-implementation.
+This script deploys only the TestStableToken implementation. See the upgrade instructions:
+[Upgrade the proxy](#update-the-proxy-contract-to-point-to-the-new-implementation)
 
 ```bash
 ETH_FROM=$DEPLOYER_ACCOUNT_ADDRESS forge script test/TestStableToken.sol:TestStableTokenFactory --tc TestStableTokenFactory --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY --broadcast
 ```
 
-### Update the proxy contract to point to the new implementation (safe, recommended)
+### Update the proxy contract to point to the new implementation
 
 When upgrading a UUPS/ERC1967 proxy you should perform the upgrade and initialization in the same transaction to avoid
 leaving the proxy in an uninitialized state. Use `upgradeToAndCall(address,bytes)` with the initializer calldata.
 
 ```bash
-# Encode the initializer calldata (example: set MAX_SUPPLY to 1_000_000 * 10**18)
+# Encode the initializer calldata (example: set MAX_SUPPLY to 1_000_000 ETH = 1_000_000 * 10**18)
 DATA=$(cast abi-encode "initialize(uint256)" 1000000000000000000000000)
 
 # Perform upgrade and call initializer atomically
