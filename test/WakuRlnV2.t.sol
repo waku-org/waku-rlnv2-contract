@@ -1412,4 +1412,43 @@ contract WakuRlnV2Test is Test {
         vm.expectRevert(abi.encodeWithSelector(InvalidPaginationQuery.selector, 1, 1));
         w.getRateCommitmentsInRangeBoundsInclusive(1, 1);
     }
+
+    function test__ImpactOfDurationChangesOnExistingMemberships() external {
+        uint32 originalActive = w.activeDurationForNewMemberships();
+        uint32 originalGrace = w.gracePeriodDurationForNewMemberships();
+
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        token.approve(address(w), price);
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+
+        {
+            (, uint32 active1,, uint32 grace1,,,,) = w.memberships(1);
+            assertEq(active1, originalActive);
+            assertEq(grace1, originalGrace);
+        }
+
+        vm.prank(w.owner());
+        w.setActiveDuration(20 minutes);
+        vm.prank(w.owner());
+        w.setGracePeriodDuration(5 minutes);
+
+        token.approve(address(w), price);
+        w.register(2, rateLimit, noIdCommitmentsToErase);
+
+        // Existing unchanged
+        {
+            (, uint32 active1,, uint32 grace1,,,,) = w.memberships(1);
+            assertEq(active1, originalActive);
+            assertEq(grace1, originalGrace);
+        }
+
+        // New uses updated
+        {
+            (, uint32 active2,, uint32 grace2,,,,) = w.memberships(2);
+            assertEq(active2, 20 minutes);
+            assertEq(grace2, 5 minutes);
+        }
+    }
 }
