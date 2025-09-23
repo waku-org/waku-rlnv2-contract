@@ -19,6 +19,11 @@ token distribution while mimicking DAI's behaviour.
 - **Proxy architecture**: Use a proxy contract to minimize updates required when the token address changes across other
   components (e.g., nwaku-compose repo or dogfooding instructions)
 
+## Prerequisites
+
+- [Foundry](https://getfoundry.sh/) installed
+- An Ethereum account with testnet ETH for deploying contracts and sending transactions
+
 ## Usage
 
 Add environment variable `MAX_SUPPLY` to set the maximum supply of the token, otherwise it defaults to 1 million tokens.
