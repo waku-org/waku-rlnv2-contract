@@ -1502,4 +1502,44 @@ contract WakuRlnV2Test is Test {
         assertEq(index, 0);
         assertEq(rateCommitment, PoseidonT3.hash([uint256(1), uint256(rateLimit)]));
     }
+
+    function test__OwnerConfigurationUpdates() external {
+        address owner = w.owner();
+        vm.startPrank(owner);
+
+        // Ensure maxMembershipRateLimit is compatible with maxTotalRateLimit
+        w.setMaxMembershipRateLimit(100);
+        assertEq(w.maxMembershipRateLimit(), 100);
+
+        // Set minMembershipRateLimit first to allow maxMembershipRateLimit=15
+        w.setMinMembershipRateLimit(2);
+        assertEq(w.minMembershipRateLimit(), 2);
+
+        // Valid updates
+        w.setMaxTotalRateLimit(200);
+        assertEq(w.maxTotalRateLimit(), 200);
+
+        w.setMaxMembershipRateLimit(15);
+        assertEq(w.maxMembershipRateLimit(), 15);
+
+        w.setActiveDuration(20 minutes);
+        assertEq(w.activeDurationForNewMemberships(), 20 minutes);
+
+        w.setGracePeriodDuration(5 minutes);
+        assertEq(w.gracePeriodDurationForNewMemberships(), 5 minutes);
+
+        // Invalid updates
+        vm.expectRevert(); // Generic revert for require(_minMembershipRateLimit <= maxMembershipRateLimit)
+        w.setMinMembershipRateLimit(20);
+
+        vm.expectRevert(); // Generic revert for require(_activeDurationForNewMembership > 0)
+        w.setActiveDuration(0);
+
+        vm.stopPrank();
+
+        // Non-owner
+        vm.prank(vm.addr(1));
+        vm.expectRevert("Ownable: caller is not the owner");
+        w.setMaxTotalRateLimit(100);
+    }
 }
