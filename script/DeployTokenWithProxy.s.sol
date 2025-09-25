@@ -11,13 +11,16 @@ contract DeployTokenWithProxy is BaseScript {
     }
 
     function deploy() public returns (ERC1967Proxy) {
+        // Read desired max supply from env or use default
+        uint256 defaultMaxSupply = vm.envOr({ name: "MAX_SUPPLY", defaultValue: uint256(1_000_000 * 10 ** 18) });
+
         // Deploy the initial implementation
         address implementation = address(new TestStableToken());
 
-        // Encode the initialize call
-        bytes memory data = abi.encodeCall(TestStableToken.initialize, (1_000_000 * 10 ** 18));
+        // Encode the initialize call (maxSupply)
+        bytes memory initData = abi.encodeCall(TestStableToken.initialize, (defaultMaxSupply));
 
         // Deploy the proxy with initialization data
-        return new ERC1967Proxy(implementation, data);
+        return new ERC1967Proxy(implementation, initData);
     }
 }

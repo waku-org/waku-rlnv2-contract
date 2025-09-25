@@ -19,12 +19,19 @@ token distribution while mimicking DAI's behaviour.
 - **Proxy architecture**: Use a proxy contract to minimize updates required when the token address changes across other
   components (e.g., nwaku-compose repo or dogfooding instructions)
 
+## Prerequisites
+
+- [Foundry](https://getfoundry.sh/) installed
+- An Ethereum account with testnet ETH for deploying contracts and sending transactions
+
 ## Usage
+
+Add environment variable `MAX_SUPPLY` to set the maximum supply of the token, otherwise it defaults to 1 million tokens.
 
 ### Deploy new TestStableToken with proxy contract
 
-This script deploys both the proxy and the TestStableToken implementation, initializing the proxy to point to the new
-implementation.
+This script deploys both the proxy contract and the TestStableToken implementation contract, initializing the proxy to
+point to the new implementation.
 
 ```bash
 ETH_FROM=$DEPLOYER_ACCOUNT_ADDRESS forge script script/DeployTokenWithProxy.s.sol:DeployTokenWithProxy --rpc-url $RPC_URL --broadcast --private_key $DEPLOYER_ACCOUNT_PRIVATE_KEY
@@ -36,21 +43,42 @@ or
 MNEMONIC=$TWELVE_WORD_MNEMONIC forge script script/DeployTokenWithProxy.s.sol:DeployTokenWithProxy --rpc-url $RPC_URL --broadcast
 ```
 
-### Deploy only TestStableToken contract implementation
+### Deploy only TestStableToken implementation contract
 
-This script deploys only the TestStableToken implementation, which can then be used to update the proxy contract to
-point to this new implementation.
+This script deploys only the TestStableToken implementation. See the upgrade instructions:
+[Upgrade the proxy](#update-the-proxy-contract-to-point-to-the-new-implementation)
 
 ```bash
-forge script test/TestStableToken.sol:TestStableTokenFactory --tc TestStableTokenFactory --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY --broadcast
+ETH_FROM=$DEPLOYER_ACCOUNT_ADDRESS forge script test/TestStableToken.sol:TestStableTokenFactory --tc TestStableTokenFactory --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY --broadcast
 ```
 
 ### Update the proxy contract to point to the new implementation
 
+#### Option 1: Update proxy implementation address only (recommended when the proxy is already initialized)
+
+When the proxy is already initialized and the `maxSupply` is set, you can simply update the implementation address using
+`upgradeTo(address)`.
+
 ```bash
-# Upgrade the proxy to a new implementation
 cast send $TOKEN_PROXY_ADDRESS "upgradeTo(address)" $NEW_IMPLEMENTATION_ADDRESS --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY
 ```
+
+#### Option 2: Update proxy implementation address and initialize cap
+
+When upgrading a UUPS/ERC1967 proxy you should perform the upgrade and initialization in the same transaction to avoid
+leaving the proxy in an uninitialized state. Use `upgradeToAndCall(address,bytes)` with the initializer calldata.
+
+```bash
+# Encode the initializer calldata (example: set MAX_SUPPLY to 1_000_000 ETH = 1_000_000 * 10**18)
+DATA=$(cast abi-encode "initialize(uint256)" 1000000000000000000000000)
+
+# Perform upgrade and call initializer atomically
+cast send $TOKEN_PROXY_ADDRESS "upgradeToAndCall(address,bytes)" $NEW_IMPLEMENTATION_ADDRESS $DATA --rpc-url $RPC_URL --private-key $DEPLOYER_ACCOUNT_PRIVATE_KEY
+```
+
+If you must call `upgradeTo` separately (not recommended), follow up immediately with an `initialize(...)` call in the
+same transaction or as the next transaction from the owner/multisig. However, prefer `upgradeToAndCall` to eliminate the
+time window where the proxy points to a new implementation but its storage (e.g., `maxSupply`) is uninitialized.
 
 ### Add account to the allowlist to enable minting
 
@@ -68,8 +96,10 @@ cast send $TOKEN_PROXY_ADDRESS "mint(address,uint256)" <TO_ADDRESS> <AMOUNT> --r
 
 #### Option 2: Public minting by burning ETH (no privileges required)
 
+The total tokens minted is determined by the amount of ETH sent with the transaction.
+
 ```bash
-cast send $TOKEN_PROXY_ADDRESS "mintWithETH(address,uint256)" <TO_ACCOUNT> <AMOUNT> --value <ETH_AMOUNT> --rpc-url $RPC_URL --private-key $MINTING_ACCOUNT_PRIVATE_KEY --from $MINTING_ACCOUNT_ADDRESS
+cast send $TOKEN_PROXY_ADDRESS "mintWithETH(address)" <TO_ACCOUNT> --value <ETH_AMOUNT> --rpc-url $RPC_URL --private-key $MINTING_ACCOUNT_PRIVATE_KEY --from $MINTING_ACCOUNT_ADDRESS
 ```
 
 **Note**: The `mintWithETH` function is public and can be called by anyone. It requires sending ETH with the transaction

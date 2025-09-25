@@ -8,12 +8,14 @@ import { ERC20PermitUpgradeable } from
 import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import { Initializable } from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import { ERC1967Proxy } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 error AccountNotMinter();
 error AccountAlreadyMinter();
 error AccountNotInMinterList();
 error InsufficientETH();
 error ExceedsMaxSupply();
+error InvalidMaxSupply(uint256 supplied);
 
 contract TestStableToken is
     Initializable,
@@ -44,6 +46,7 @@ contract TestStableToken is
         __ERC20Permit_init("TestStableToken");
         __Ownable_init();
         __UUPSUpgradeable_init();
+        if (_maxSupply == 0) revert InvalidMaxSupply(_maxSupply);
 
         maxSupply = _maxSupply;
     }
