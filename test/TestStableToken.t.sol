@@ -278,7 +278,7 @@ contract TestStableTokenTest is Test {
         token.mintWithETH{ value: 0 }(user2);
     }
 
-    function test__MaxSupplyIsSetCorrectly() external {
+    function test__MaxSupplyIsSetCorrectly() external view {
         // maxSupply should be set to 1000000 * 10^18 by deployment script
         uint256 expectedMaxSupply = 1_000_000 * 10 ** 18;
         assertEq(token.maxSupply(), expectedMaxSupply);
