@@ -54,4 +54,18 @@ contract WakuRlnV2Test is Test {
         vm.expectRevert(); // Generic or specific error
         w.register(idCommitment, rateLimit, new uint256[](0));
     }
+
+    function testFuzz_MultipleRegisters(uint8 numRegs) external {
+        vm.assume(numRegs > 0 && numRegs < 100); // Small for gas
+        uint32 rateLimit = w.minMembershipRateLimit();
+        uint256 totalExpected = 0;
+        for (uint8 i = 1; i <= numRegs; i++) {
+            vm.assume(w.currentTotalRateLimit() + rateLimit <= w.maxTotalRateLimit());
+            (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+            token.approve(address(w), price);
+            w.register(i, rateLimit, new uint256[](0));
+            totalExpected += rateLimit;
+        }
+        assertEq(w.currentTotalRateLimit(), totalExpected);
+    }
 }
