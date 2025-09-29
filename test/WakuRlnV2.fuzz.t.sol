@@ -78,16 +78,18 @@ contract WakuRlnV2Test is Test {
 
     function _buildIdsFromMask(uint8 subsetMask) internal pure returns (uint256[] memory idCommitments) {
         uint256 len = 0;
-        if (subsetMask & 1 != 0) len++;
-        if (subsetMask & 2 != 0) len++;
-        if (subsetMask & 4 != 0) len++;
-        if (subsetMask & 8 != 0) len++;
+        for (uint8 bit = 0; bit < 4; bit++) {
+            if ((subsetMask & (1 << bit)) != 0) {
+                len++;
+            }
+        }
         idCommitments = new uint256[](len);
         uint256 idx = 0;
-        if (subsetMask & 1 != 0) idCommitments[idx++] = 1;
-        if (subsetMask & 2 != 0) idCommitments[idx++] = 2;
-        if (subsetMask & 4 != 0) idCommitments[idx++] = 3;
-        if (subsetMask & 8 != 0) idCommitments[idx++] = 4;
+        for (uint8 bit = 0; bit < 4; bit++) {
+            if ((subsetMask & (1 << bit)) != 0) {
+                idCommitments[idx++] = uint256(bit) + 1;
+            }
+        }
     }
 
     // Fuzz Test: Erasure with Random IDs and Time Deltas
