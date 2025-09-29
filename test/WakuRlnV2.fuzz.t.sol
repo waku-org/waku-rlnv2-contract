@@ -76,6 +76,20 @@ contract WakuRlnV2Test is Test {
         w.register(idCommitment, rateLimit, new uint256[](0));
     }
 
+    function _buildIdsFromMask(uint8 subsetMask) internal pure returns (uint256[] memory idCommitments) {
+        uint256 len = 0;
+        if (subsetMask & 1 != 0) len++;
+        if (subsetMask & 2 != 0) len++;
+        if (subsetMask & 4 != 0) len++;
+        if (subsetMask & 8 != 0) len++;
+        idCommitments = new uint256[](len);
+        uint256 idx = 0;
+        if (subsetMask & 1 != 0) idCommitments[idx++] = 1;
+        if (subsetMask & 2 != 0) idCommitments[idx++] = 2;
+        if (subsetMask & 4 != 0) idCommitments[idx++] = 3;
+        if (subsetMask & 8 != 0) idCommitments[idx++] = 4;
+    }
+
     // Fuzz Test: Erasure with Random IDs and Time Deltas
     function testFuzz_Erasure(bool fullErase, uint8 subsetMask) external {
         vm.assume(subsetMask > 0 && subsetMask < 16);
@@ -95,18 +109,7 @@ contract WakuRlnV2Test is Test {
             uint256(w.activeDurationForNewMemberships()) + uint256(w.gracePeriodDurationForNewMemberships()) + 1;
         vm.warp(block.timestamp + minDelta);
 
-        // Constrain array
-        uint256 len = 0;
-        if (subsetMask & 1 != 0) len++;
-        if (subsetMask & 2 != 0) len++;
-        if (subsetMask & 4 != 0) len++;
-        if (subsetMask & 8 != 0) len++;
-        uint256[] memory idCommitments = new uint256[](len);
-        uint256 idx = 0;
-        if (subsetMask & 1 != 0) idCommitments[idx++] = 1;
-        if (subsetMask & 2 != 0) idCommitments[idx++] = 2;
-        if (subsetMask & 4 != 0) idCommitments[idx++] = 3;
-        if (subsetMask & 8 != 0) idCommitments[idx++] = 4;
+        uint256[] memory idCommitments = _buildIdsFromMask(subsetMask);
 
         // Record indices before erasure
         uint32[] memory indices = new uint32[](idCommitments.length);
