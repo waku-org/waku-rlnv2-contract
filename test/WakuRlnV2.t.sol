@@ -63,6 +63,10 @@ contract MockPriceCalculator is IPriceCalculator {
     }
 }
 
+contract NonUUPSContract {
+// A mock contract that does not support UUPS (no proxiable UUID or _authorizeUpgrade)
+}
+
 contract WakuRlnV2Test is Test {
     WakuRlnV2 internal w;
     TestStableToken internal token;
@@ -693,7 +697,6 @@ contract WakuRlnV2Test is Test {
 
         // Calculate required token amount for membership
         (, uint256 price) = w.priceCalculator().calculate(membershipRateLimit);
-        uint256 ethAmount = price; // Use same amount of ETH as token price needed
 
         // Verify nonMinter is not a minter
         assertFalse(token.isMinter(nonMinter));
@@ -1301,5 +1304,242 @@ contract WakuRlnV2Test is Test {
             13_301_394_660_502_635_912_556_179_583_660_948_983_063_063_326_359_792_688_871_878_654_796_186_320_104
         ); // expected root after insert
         assertEq(token.balanceOf(address(w)), 0); // No transfer
+    }
+
+    function test__MassRegistrationAndErasure() external {
+        uint32 num = 10; // Number of memberships to register - adjust for gas limits in testing
+        uint32 rateLimit = 1; // Low to fit max total
+        vm.prank(w.owner());
+        w.setMinMembershipRateLimit(1);
+
+        vm.prank(w.owner());
+        w.setMaxMembershipRateLimit(1);
+
+        vm.prank(w.owner());
+        w.setMaxTotalRateLimit(num * rateLimit);
+
+        vm.prank(w.owner());
+        w.setActiveDuration(600); // 10 minutes
+
+        vm.prank(w.owner());
+        w.setGracePeriodDuration(240); // 4 minutes
+
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        for (uint256 i = 1; i <= num; i++) {
+            token.approve(address(w), price);
+            w.register(i, rateLimit, noIdCommitmentsToErase);
+        }
+        assertEq(w.nextFreeIndex(), num);
+        assertEq(w.currentTotalRateLimit(), num * rateLimit);
+
+        // Warp to expire all
+        vm.warp(
+            block.timestamp + uint256(w.activeDurationForNewMemberships())
+                + uint256(w.gracePeriodDurationForNewMemberships()) + 1
+        );
+
+        uint256[] memory toErase = new uint256[](num / 2);
+        for (uint256 i = 0; i < num / 2; i++) {
+            toErase[i] = i + 1;
+        }
+        w.eraseMemberships(toErase, false); // Lazy half
+
+        uint256[] memory toEraseFull = new uint256[](num / 2);
+        for (uint256 i = num / 2; i < num; i++) {
+            toEraseFull[i - num / 2] = i + 1;
+        }
+        w.eraseMemberships(toEraseFull, true); // Full half
+
+        assertEq(w.currentTotalRateLimit(), 0);
+
+        // Verify root and commitments
+        uint256[] memory actual_rcs = w.getRateCommitmentsInRangeBoundsInclusive(0, num - 1);
+        uint256[] memory expected_rcs = new uint256[](num);
+        for (uint256 i = 0; i < num; i++) {
+            if (i < num / 2) {
+                // Lazy erased: commitments remain as original
+                expected_rcs[i] = PoseidonT3.hash([uint256(i + 1), uint256(rateLimit)]);
+            } else {
+                // Fully erased: commitments set to 0
+                expected_rcs[i] = 0;
+            }
+            assertEq(actual_rcs[i], expected_rcs[i]);
+        }
+
+        // Verify all memberships are considered erased (rateLimit == 0)
+        for (uint256 i = 1; i <= num; i++) {
+            (uint32 rl, uint32 idx, uint256 rc) = w.getMembershipInfo(i);
+            assertEq(rl, 0);
+            assertEq(idx, 0);
+            assertEq(rc, 0);
+            assertFalse(w.isInMembershipSet(i));
+        }
+
+        // Optionally, verify the Merkle root is non-zero (since partial tree remains)
+        assertNotEq(w.root(), 0);
+    }
+
+    function test__LargePaginationQuery() external {
+        uint32 num = 1000;
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        // Register 'num' memberships
+        for (uint256 i = 1; i <= num; i++) {
+            token.approve(address(w), price);
+            w.register(i, rateLimit, noIdCommitmentsToErase);
+        }
+
+        // Large query for the rate commitments
+        uint256[] memory commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, num - 1);
+        assertEq(commitments.length, num);
+
+        // Verify each returned commitment matches the expected Poseidon hash
+        for (uint256 i = 0; i < num; i++) {
+            uint256 expected = PoseidonT3.hash([i + 1, rateLimit]);
+            assertEq(commitments[i], expected);
+        }
+    }
+
+    function test__EmptyRangePagination() external {
+        // Valid range with one element
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+        token.approve(address(w), price);
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+
+        uint256[] memory commitments = w.getRateCommitmentsInRangeBoundsInclusive(0, 0);
+        assertEq(commitments.length, 1);
+
+        // Beyond nextFreeIndex
+        vm.expectRevert(abi.encodeWithSelector(InvalidPaginationQuery.selector, 1, 1));
+        w.getRateCommitmentsInRangeBoundsInclusive(1, 1);
+    }
+
+    function test__ImpactOfDurationChangesOnExistingMemberships() external {
+        uint32 originalActive = w.activeDurationForNewMemberships();
+        uint32 originalGrace = w.gracePeriodDurationForNewMemberships();
+
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+
+        token.approve(address(w), price);
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+
+        {
+            (, uint32 active1,, uint32 grace1,,,,) = w.memberships(1);
+            assertEq(active1, originalActive);
+            assertEq(grace1, originalGrace);
+        }
+
+        vm.prank(w.owner());
+        w.setActiveDuration(20 minutes);
+        vm.prank(w.owner());
+        w.setGracePeriodDuration(5 minutes);
+
+        token.approve(address(w), price);
+        w.register(2, rateLimit, noIdCommitmentsToErase);
+
+        // Existing unchanged
+        {
+            (, uint32 active1,, uint32 grace1,,,,) = w.memberships(1);
+            assertEq(active1, originalActive);
+            assertEq(grace1, originalGrace);
+        }
+
+        // New uses updated
+        {
+            (, uint32 active2,, uint32 grace2,,,,) = w.memberships(2);
+            assertEq(active2, 20 minutes);
+            assertEq(grace2, 5 minutes);
+        }
+    }
+
+    function test__UpgradeWithInvalidImplementation() external {
+        // Deploy an invalid (non-UUPS) implementation contract
+        address invalidImpl = address(new NonUUPSContract());
+
+        // Capture the current implementation address from the ERC1967 slot
+        bytes32 implSlot = bytes32(uint256(keccak256("eip1967.proxy.implementation")) - 1);
+        address originalImpl = address(uint160(uint256(vm.load(address(w), implSlot))));
+
+        // Impersonate the owner and expect the specific UUPS revert for unsupported proxiable UUID
+        vm.prank(w.owner());
+        vm.expectRevert("ERC1967Upgrade: new implementation is not UUPS");
+        UUPSUpgradeable(address(w)).upgradeTo(invalidImpl);
+
+        // Verify the implementation slot remains unchanged (still the original)
+        address currentImpl = address(uint160(uint256(vm.load(address(w), implSlot))));
+        assertEq(currentImpl, originalImpl);
+        assertNotEq(currentImpl, invalidImpl);
+    }
+
+    function test__UnauthorizedMerkleTreeModifications() external {
+        // Register a single membership to populate the Merkle tree
+        uint32 rateLimit = w.minMembershipRateLimit();
+        (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+        token.approve(address(w), price);
+        w.register(1, rateLimit, noIdCommitmentsToErase);
+
+        // Capture the initial Merkle tree root
+        uint256 initialRoot = w.root();
+
+        // Attempt a low-level call to a nonexistent public function resembling LazyIMT's internal update
+        // Since LazyIMT's update is internal, no such function exists publicly, so the call will fail
+        bytes memory invalidCallData = abi.encodeWithSignature("update(uint256,uint32)", 0, 0);
+        (bool success,) = address(w).call(invalidCallData);
+
+        // Verify the call failed (no public function exists)
+        assertFalse(success);
+
+        // Verify the Merkle tree root remains unchanged
+        assertEq(w.root(), initialRoot);
+
+        // Verify membership data is intact
+        (uint32 fetchedRateLimit, uint32 index, uint256 rateCommitment) = w.getMembershipInfo(1);
+        assertEq(fetchedRateLimit, rateLimit);
+        assertEq(index, 0);
+        assertEq(rateCommitment, PoseidonT3.hash([uint256(1), uint256(rateLimit)]));
+    }
+
+    function test__OwnerConfigurationUpdates() external {
+        address owner = w.owner();
+        vm.startPrank(owner);
+
+        // Ensure maxMembershipRateLimit is compatible with maxTotalRateLimit
+        w.setMaxMembershipRateLimit(100);
+        assertEq(w.maxMembershipRateLimit(), 100);
+
+        // Set minMembershipRateLimit first to allow maxMembershipRateLimit=15
+        w.setMinMembershipRateLimit(2);
+        assertEq(w.minMembershipRateLimit(), 2);
+
+        // Valid updates
+        w.setMaxTotalRateLimit(200);
+        assertEq(w.maxTotalRateLimit(), 200);
+
+        w.setMaxMembershipRateLimit(15);
+        assertEq(w.maxMembershipRateLimit(), 15);
+
+        w.setActiveDuration(20 minutes);
+        assertEq(w.activeDurationForNewMemberships(), 20 minutes);
+
+        w.setGracePeriodDuration(5 minutes);
+        assertEq(w.gracePeriodDurationForNewMemberships(), 5 minutes);
+
+        // Invalid updates
+        vm.expectRevert(); // Generic revert for require(_minMembershipRateLimit <= maxMembershipRateLimit)
+        w.setMinMembershipRateLimit(20);
+
+        vm.expectRevert(); // Generic revert for require(_activeDurationForNewMembership > 0)
+        w.setActiveDuration(0);
+
+        vm.stopPrank();
+
+        // Non-owner
+        vm.prank(vm.addr(1));
+        vm.expectRevert("Ownable: caller is not the owner");
+        w.setMaxTotalRateLimit(100);
     }
 }
