@@ -117,7 +117,7 @@ jobs:
           )" >> $GITHUB_ENV
 
       - name: "Run the tests"
-        run: "forge test --threads 0"
+        run: "forge test"
 
       - name: "Add test summary"
         run: |
