@@ -204,4 +204,57 @@ contract WakuRlnV2Test is Test {
             assertFalse(w.isExpired(validId));
         }
     }
+
+    // Fuzz Test: Owner Sets Max Total Rate Limit with Extremes
+    function testFuzz_SetMaxTotalRateLimit(uint32 newMaxTotal, bool registerBefore) external {
+        // Prank as owner for all calls
+        address owner = w.owner();
+        vm.startPrank(owner);
+
+        // Optionally register a membership before to test impact on current total
+        uint32 minRate = w.minMembershipRateLimit();
+        if (registerBefore && minRate <= w.maxTotalRateLimit()) {
+            vm.stopPrank(); // Temporarily switch to test contract for registration
+            _registerMembership(1, minRate);
+            vm.startPrank(owner);
+        }
+        uint256 currentTotal = w.currentTotalRateLimit();
+
+        // Fuzz constraints: Focus on extremes (0, min, max uint32, boundaries around current/max membership)
+        uint32 maxMembership = w.maxMembershipRateLimit();
+        vm.assume(
+            newMaxTotal == 0 || newMaxTotal == 1 || newMaxTotal == maxMembership - 1 || newMaxTotal == maxMembership
+                || newMaxTotal == maxMembership + 1 || newMaxTotal == type(uint32).max - 1
+                || newMaxTotal == type(uint32).max
+        );
+
+        // Expect revert if invalid (newMaxTotal < maxMembership), else succeed
+        if (newMaxTotal < maxMembership) {
+            vm.expectRevert(); // Invalid (require maxMembership <= newMaxTotal)
+            w.setMaxTotalRateLimit(newMaxTotal);
+        } else {
+            w.setMaxTotalRateLimit(newMaxTotal);
+            assertEq(w.maxTotalRateLimit(), newMaxTotal); // Getter matches
+        }
+
+        // Invariant: Existing memberships unaffected
+        if (registerBefore) {
+            assertEq(w.currentTotalRateLimit(), currentTotal); // Total unchanged
+            (,,,, uint32 rl,,,) = w.memberships(1);
+            assertEq(rl, minRate); // Rate limit immutable
+        }
+
+        // Chain: Attempt new registration to test DoS/overflow effects
+        vm.stopPrank();
+        uint256 newMax = w.maxTotalRateLimit(); // Use updated
+        uint256 newCurrent = w.currentTotalRateLimit();
+        if (minRate <= newMax && newCurrent + minRate <= newMax) {
+            _registerMembership(2, minRate); // Succeed if valid
+        } else {
+            vm.expectRevert(CannotExceedMaxTotalRateLimit.selector);
+            _registerMembership(2, minRate); // Revert if exceeds
+        }
+
+        vm.stopPrank();
+    }
 }
