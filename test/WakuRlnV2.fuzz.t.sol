@@ -257,4 +257,57 @@ contract WakuRlnV2Test is Test {
 
         vm.stopPrank();
     }
+
+    // Fuzz Test: Owner Sets Active Duration with Extremes
+    function testFuzz_SetActiveDuration(uint32 newActiveDur, bool registerBefore) external {
+        // Prank as owner
+        address owner = w.owner();
+        vm.startPrank(owner);
+
+        // Optionally register before to test no impact on existing
+        uint32 minRate = w.minMembershipRateLimit();
+        uint32 originalActiveDur;
+        uint256 originalGraceStart;
+        if (registerBefore && minRate <= w.maxTotalRateLimit()) {
+            vm.stopPrank();
+            _registerMembership(1, minRate);
+            (,, originalGraceStart,,,,,) = w.memberships(1);
+            (, originalActiveDur,,,,,,) = w.memberships(1);
+            vm.startPrank(owner);
+        }
+
+        // Fuzz constraints: Extremes (0, 1, max uint32, etc.)
+        vm.assume(
+            newActiveDur == 0 || newActiveDur == 1 || newActiveDur == type(uint32).max - 1
+                || newActiveDur == type(uint32).max
+        );
+
+        // Expect revert if invalid (==0)
+        if (newActiveDur == 0) {
+            vm.expectRevert(); // require >0
+            w.setActiveDuration(newActiveDur);
+        } else {
+            w.setActiveDuration(newActiveDur);
+            assertEq(w.activeDurationForNewMemberships(), newActiveDur); // Getter matches
+        }
+
+        // Invariant: Existing memberships unaffected (durations immutable)
+        if (registerBefore) {
+            (,, uint256 graceStart,,,,,) = w.memberships(1);
+            assertEq(graceStart, originalGraceStart); // Grace start unchanged
+            (, uint32 activeDur,,,,,,) = w.memberships(1);
+            assertEq(activeDur, originalActiveDur); // Existing keeps original duration
+        }
+
+        // Chain: New registration uses new duration, test extremes
+        vm.stopPrank();
+        if (newActiveDur > 0 && minRate <= w.maxTotalRateLimit()) {
+            _registerMembership(2, minRate);
+            (, uint32 activeDur, uint256 newGraceStart,,,,,) = w.memberships(2);
+            assertEq(activeDur, newActiveDur); // New uses updated
+            assertEq(newGraceStart, block.timestamp + uint256(newActiveDur)); // Correct start
+        }
+
+        vm.stopPrank();
+    }
 }
