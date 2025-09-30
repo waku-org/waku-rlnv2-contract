@@ -106,7 +106,7 @@ contract WakuRlnV2Test is Test {
             }
         }
 
-        // Fuzz time warp (constrain to > active + grace for expiration, and < 1180 year to reduce range and speed up)
+        // Fuzz time warp
         uint256 minDelta =
             uint256(w.activeDurationForNewMemberships()) + uint256(w.gracePeriodDurationForNewMemberships()) + 1;
         vm.warp(block.timestamp + minDelta);
@@ -137,5 +137,70 @@ contract WakuRlnV2Test is Test {
             erasedTotal += rateLimit; // Assuming all were valid to erase
         }
         assertEq(w.currentTotalRateLimit(), initialTotal - erasedTotal);
+    }
+
+    // Fuzz Test: Valid Registration with Invalid Extension Attempts
+    function testFuzz_InvalidExtension(uint256 timeDelta, address sender, uint256 invalidId) external {
+        // Setup: Register a valid membership
+        uint32 rateLimit = w.minMembershipRateLimit();
+        uint256 validId = 1;
+        _registerMembership(validId, rateLimit);
+
+        // Prevent overflow in block.timestamp + timeDelta
+        vm.assume(timeDelta <= type(uint256).max - block.timestamp);
+
+        // Constrain to invalid scenarios with focus on extreme values
+        uint256 active = uint256(w.activeDurationForNewMemberships());
+        uint256 grace = uint256(w.gracePeriodDurationForNewMemberships());
+        vm.assume(
+            // Case 1: During active (cannot extend) - extremes: start, near/end of active
+            (timeDelta < active && (timeDelta == 0 || timeDelta == 1 || timeDelta == active - 1))
+            // Case 2: After expiration (cannot extend expired) - extremes: just after, next, far future
+            || (
+                timeDelta >= active + grace
+                    && (timeDelta == active + grace || timeDelta == active + grace + 1 || timeDelta == type(uint256).max)
+            )
+            // Case 3: Non-holder sender - extremes: zero addr, low, max addr
+            || (
+                sender != address(this)
+                    && (sender == address(0) || sender == address(1) || sender == address(type(uint160).max))
+            )
+            // Case 4: Invalid/non-existent ID - extremes: zero, near Q, at/over Q, max uint
+            || (
+                invalidId != validId
+                    && (invalidId == 0 || invalidId == w.Q() - 1 || invalidId == w.Q() || invalidId == type(uint256).max)
+            )
+        );
+
+        // Warp time if needed
+        if (timeDelta > 0) {
+            vm.warp(block.timestamp + timeDelta);
+        }
+
+        // Prank sender if not this
+        if (sender != address(this)) {
+            vm.prank(sender);
+        }
+
+        // Prepare array with potentially invalid ID
+        uint256[] memory toExtend = new uint256[](1);
+        toExtend[0] = (invalidId == validId) ? validId : invalidId;
+
+        // Expect revert for invalid extension
+        vm.expectRevert(); // Generic, or specify error if known (e.g., CannotExtendNonGracePeriodMembership.selector)
+
+        w.extendMemberships(toExtend);
+
+        // Assert: State unchanged (grace start remains original)
+        (,, uint256 graceStart,,,,,) = w.memberships(validId);
+        uint256 expectedGraceStart = block.timestamp - timeDelta + active; // Original grace start
+        assertEq(graceStart, expectedGraceStart);
+        // Additional checks: Still in original state (e.g., expired if timeDelta > active + grace)
+        if (timeDelta >= active + grace) {
+            assertTrue(w.isExpired(validId));
+        } else if (timeDelta < active) {
+            assertFalse(w.isInGracePeriod(validId));
+            assertFalse(w.isExpired(validId));
+        }
     }
 }
