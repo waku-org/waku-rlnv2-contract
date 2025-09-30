@@ -145,9 +145,10 @@ contract WakuRlnV2Test is Test {
         uint32 rateLimit = w.minMembershipRateLimit();
         uint256 validId = 1;
         _registerMembership(validId, rateLimit);
+        uint256 uint256Max = type(uint256).max;
 
         // Prevent overflow in block.timestamp + timeDelta
-        vm.assume(timeDelta <= type(uint256).max - block.timestamp);
+        vm.assume(timeDelta <= uint256Max - block.timestamp);
 
         // Constrain to invalid scenarios with focus on extreme values
         uint256 active = uint256(w.activeDurationForNewMemberships());
@@ -158,7 +159,7 @@ contract WakuRlnV2Test is Test {
             // Case 2: After expiration (cannot extend expired) - extremes: just after, next, far future
             || (
                 timeDelta >= active + grace
-                    && (timeDelta == active + grace || timeDelta == active + grace + 1 || timeDelta == type(uint256).max)
+                    && (timeDelta == active + grace || timeDelta == active + grace + 1 || timeDelta == uint256Max)
             )
             // Case 3: Non-holder sender - extremes: zero addr, low, max addr
             || (
@@ -168,7 +169,7 @@ contract WakuRlnV2Test is Test {
             // Case 4: Invalid/non-existent ID - extremes: zero, near Q, at/over Q, max uint
             || (
                 invalidId != validId
-                    && (invalidId == 0 || invalidId == w.Q() - 1 || invalidId == w.Q() || invalidId == type(uint256).max)
+                    && (invalidId == 0 || invalidId == w.Q() - 1 || invalidId == w.Q() || invalidId == uint256Max)
             )
         );
 
