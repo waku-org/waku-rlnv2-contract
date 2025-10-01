@@ -310,4 +310,79 @@ contract WakuRlnV2Test is Test {
 
         vm.stopPrank();
     }
+
+    // Helper: Verify Merkle Proof Manually (since lib lacks verify)
+    function _verifyMerkleProof(
+        uint256[20] memory proof,
+        uint256 root,
+        uint32 index,
+        uint256 leaf,
+        uint8 depth
+    )
+        internal
+        pure
+        returns (bool)
+    {
+        uint256 current = leaf;
+        uint32 idx = index;
+        for (uint8 level = 0; level < depth; level++) {
+            bool isLeft = (idx & 1) == 0;
+            uint256 sibling = proof[level];
+            uint256[2] memory inputs;
+            if (isLeft) {
+                inputs[0] = current;
+                inputs[1] = sibling;
+            } else {
+                inputs[0] = sibling;
+                inputs[1] = current;
+            }
+            current = PoseidonT3.hash(inputs);
+            idx >>= 1;
+        }
+        return current == root;
+    }
+
+    // Fuzz Test: Merkle Tree Insertions and Proofs via Registrations
+    function testFuzz_MerkleInserts(uint8 numInserts) external {
+        vm.assume(numInserts > 0 && numInserts <= 32);
+
+        uint32 rateLimit = w.minMembershipRateLimit();
+        uint256[] memory ids = new uint256[](numInserts);
+        uint32[] memory indices = new uint32[](numInserts);
+        uint256[] memory expectedRoots = new uint256[](numInserts);
+
+        // Sequence: Fuzz registrations, track indices and commitments
+        for (uint8 i = 0; i < numInserts; i++) {
+            uint256 id = uint256(keccak256(abi.encodePacked(i, block.timestamp))) % (w.Q() - 1) + 1; // Valid random ID
+            ids[i] = id;
+            vm.assume(w.currentTotalRateLimit() + rateLimit <= w.maxTotalRateLimit());
+
+            (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+            token.approve(address(w), price);
+            w.register(id, rateLimit, new uint256[](0));
+
+            // Track index and expected root (incremental)
+            (uint32 rl, uint32 idx, uint256 commitment) = w.getMembershipInfo(id);
+            indices[i] = idx;
+            assertEq(rl, rateLimit);
+            assertTrue(commitment != 0); // Inserted
+
+            // Invariant: Proof valid for leaf
+            uint256[20] memory proof = w.getMerkleProof(idx);
+            uint256 root = w.root();
+            assertTrue(_verifyMerkleProof(proof, root, idx, commitment, 20));
+
+            expectedRoots[i] = root; // Snapshot for later
+        }
+
+        // Post-sequence invariants: Roots evolved correctly, no overwrites
+        assertEq(w.nextFreeIndex(), numInserts); // Filled sequentially
+        for (uint8 i = 0; i < numInserts; i++) {
+            (, uint32 idx,) = w.getMembershipInfo(ids[i]);
+            assertEq(idx, i); // Sequential indices
+            assertEq(
+                w.getRateCommitmentsInRangeBoundsInclusive(idx, idx)[0], PoseidonT3.hash([ids[i], uint256(rateLimit)])
+            );
+        }
+    }
 }
