@@ -385,4 +385,70 @@ contract WakuRlnV2Test is Test {
             );
         }
     }
+
+    // Fuzz Test: Merkle Tree Erasures and Reuses (Lazy/Full)
+    function testFuzz_MerkleErasures(uint8 numOps, bool fullErase) external {
+        vm.assume(numOps > 0 && numOps <= 16); // Small for gas
+
+        uint32 rateLimit = w.minMembershipRateLimit();
+        uint256[] memory ids = new uint256[](numOps);
+        uint32[] memory indices = new uint32[](numOps);
+
+        // Phase 1: Register fuzz numOps memberships
+        for (uint8 i = 0; i < numOps; i++) {
+            uint256 id = uint256(keccak256(abi.encodePacked(i, block.timestamp))) % (w.Q() - 1) + 1;
+            ids[i] = id;
+            vm.assume(w.currentTotalRateLimit() + rateLimit <= w.maxTotalRateLimit());
+
+            (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+            token.approve(address(w), price);
+            w.register(id, rateLimit, new uint256[](0));
+
+            (, indices[i],) = w.getMembershipInfo(id);
+        }
+
+        // Warp to expire all (for erasure eligibility)
+        uint256 minDelta =
+            uint256(w.activeDurationForNewMemberships()) + uint256(w.gracePeriodDurationForNewMemberships()) + 1;
+        vm.warp(block.timestamp + minDelta);
+
+        // Phase 2: Erase all (lazy or full), check proofs/roots
+        w.eraseMemberships(ids, fullErase);
+
+        uint256 postEraseRoot = w.root();
+        for (uint8 i = 0; i < numOps; i++) {
+            assertFalse(w.isInMembershipSet(ids[i])); // Erased
+            (,, uint256 commitment) = w.getMembershipInfo(ids[i]);
+            assertEq(commitment, 0);
+
+            // Invariant: Leaf is 0 (full) or old commitment (lazy), proof still valid for current root
+            uint256 expectedLeaf = fullErase ? 0 : PoseidonT3.hash([ids[i], uint256(rateLimit)]);
+            assertEq(w.getRateCommitmentsInRangeBoundsInclusive(indices[i], indices[i])[0], expectedLeaf);
+
+            uint256[20] memory proof = w.getMerkleProof(indices[i]);
+            assertTrue(_verifyMerkleProof(proof, postEraseRoot, indices[i], expectedLeaf, 20));
+        }
+
+        // Phase 3: Reuse erased indices via new registrations, check no overwrite issues
+        for (uint8 i = 0; i < numOps; i++) {
+            uint256 newId = uint256(keccak256(abi.encodePacked(i + numOps, block.timestamp))) % (w.Q() - 1) + 1;
+            vm.assume(w.currentTotalRateLimit() + rateLimit <= w.maxTotalRateLimit());
+
+            (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+            token.approve(address(w), price);
+            w.register(newId, rateLimit, new uint256[](0));
+
+            // Invariant: Reused index, new commitment, proof updates root
+            (, uint32 newIdx, uint256 newCommitment) = w.getMembershipInfo(newId);
+            assertTrue(newIdx < numOps); // Reused from 0 to numOps-1
+
+            uint256[20] memory newProof = w.getMerkleProof(newIdx);
+            uint256 newRoot = w.root();
+            assertTrue(_verifyMerkleProof(newProof, newRoot, newIdx, newCommitment, 20));
+            assertTrue(newRoot != postEraseRoot); // Root changed
+        }
+
+        // Final invariant: Tree size matches ops (reuses don't grow beyond)
+        assertEq(w.nextFreeIndex(), numOps);
+    }
 }
