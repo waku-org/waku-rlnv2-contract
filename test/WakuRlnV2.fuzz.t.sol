@@ -451,4 +451,52 @@ contract WakuRlnV2Test is Test {
         // Final invariant: Tree size matches ops (reuses don't grow beyond)
         assertEq(w.nextFreeIndex(), numOps);
     }
+
+    // Fuzz Test: Query Rate Commitments in Ranges (Valid/Invalid Pagination)
+    function testFuzz_GetRateCommitmentsRange(uint32 startIndex, uint32 endIndex) external {
+        // Setup: Register a variable number of memberships for tree population
+        uint8 numRegs = 16; // Fixed small for gas; could fuzz if needed
+        uint32 rateLimit = w.minMembershipRateLimit();
+        uint256[] memory ids = new uint256[](numRegs);
+
+        for (uint8 i = 0; i < numRegs; i++) {
+            uint256 id = uint256(keccak256(abi.encodePacked(i, block.timestamp))) % (w.Q() - 1) + 1;
+            ids[i] = id;
+            vm.assume(w.currentTotalRateLimit() + rateLimit <= w.maxTotalRateLimit());
+
+            (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+            token.approve(address(w), price);
+            w.register(id, rateLimit, new uint256[](0));
+        }
+
+        uint32 nextFree = w.nextFreeIndex();
+        assertEq(nextFree, numRegs); // Populated
+
+        // Fuzz constraints: Focus on extremes/invalids (0, max, beyond, start>end)
+        vm.assume(
+            // Valid: 0 <= start <= end < nextFree
+            (startIndex <= endIndex && endIndex < nextFree)
+            // Invalid: start > end, or end >= nextFree, or extremes like uint32.max
+            || (startIndex > endIndex) || (endIndex >= nextFree) || (startIndex == type(uint32).max)
+                || (endIndex == type(uint32).max) || (startIndex == nextFree - 1 && endIndex == nextFree)
+        );
+
+        // Expect revert on invalid pagination
+        if (startIndex > endIndex || endIndex >= nextFree) {
+            vm.expectRevert(abi.encodeWithSelector(InvalidPaginationQuery.selector, startIndex, endIndex));
+            w.getRateCommitmentsInRangeBoundsInclusive(startIndex, endIndex);
+        } else {
+            uint256[] memory commitments = w.getRateCommitmentsInRangeBoundsInclusive(startIndex, endIndex);
+            uint256 expectedLen = uint256(endIndex) - uint256(startIndex) + 1;
+            assertEq(commitments.length, expectedLen); // Correct length
+
+            // Invariant: Matches expected hashes for IDs at indices
+            for (uint32 j = startIndex; j <= endIndex; j++) {
+                uint256 expected = PoseidonT3.hash([ids[j], uint256(rateLimit)]);
+                assertEq(commitments[j - startIndex], expected);
+            }
+        }
+
+        // Gas DoS check implicit: Small ranges pass; large would OOM in full tree (but scaled)
+    }
 }
