@@ -499,4 +499,57 @@ contract WakuRlnV2Test is Test {
 
         // Gas DoS check implicit: Small ranges pass; large would OOM in full tree (but scaled)
     }
+
+    // Fuzz Test: Get Merkle Proofs for Indices (Valid/Invalid)
+    function testFuzz_GetMerkleProof(uint32 index) external {
+        // Setup: Register small tree
+        uint8 numRegs = 16;
+        uint32 rateLimit = w.minMembershipRateLimit();
+        uint256[] memory ids = new uint256[](numRegs);
+
+        for (uint8 i = 0; i < numRegs; i++) {
+            uint256 id = uint256(keccak256(abi.encodePacked(i, block.timestamp))) % (w.Q() - 1) + 1;
+            ids[i] = id;
+            vm.assume(w.currentTotalRateLimit() + rateLimit <= w.maxTotalRateLimit());
+
+            (, uint256 price) = w.priceCalculator().calculate(rateLimit);
+            token.approve(address(w), price);
+            w.register(id, rateLimit, new uint256[](0));
+        }
+
+        uint32 nextFree = w.nextFreeIndex();
+        uint32 maxIndex = nextFree - 1;
+
+        // Fuzz constraints: Valid (0 to maxIndex) or invalid (beyond, extremes)
+        vm.assume(
+            (index <= maxIndex) // Valid
+                || (index > maxIndex) // Beyond nextFree
+                || (index == type(uint32).max) // Extreme
+                || (index == 0 && nextFree > 0) // Edge valid
+        );
+
+        uint256 root = w.root();
+
+        // Expect revert on invalid index (beyond tree size)
+        if (index >= nextFree) {
+            vm.expectRevert("LazyIMT: leaf must exist");
+        }
+
+        // Get proof (may revert for invalid)
+        uint256[20] memory proof = w.getMerkleProof(index);
+
+        if (index > maxIndex) {
+            // For invalid (if no revert, but per lib it does), skip further asserts or note
+            return;
+        }
+
+        // Get expected commitment for index
+        uint256 expectedCommitment = w.getRateCommitmentsInRangeBoundsInclusive(index, index)[0];
+
+        // Invariant: Proof verifies expected leaf
+        assertTrue(_verifyMerkleProof(proof, root, index, expectedCommitment, 20));
+
+        // Mismatch on wrong leaf
+        assertFalse(_verifyMerkleProof(proof, root, index, expectedCommitment + 1, 20));
+    }
 }
